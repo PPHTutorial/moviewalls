@@ -15,7 +15,8 @@ import '../search/search_screen.dart';
 import '../favorites/favorites_screen.dart';
 import '../settings/settings_screen.dart';
 import '../../widgets/ad_banner_widget.dart';
-import '../../../services/image_processing/image_pipeline_service.dart';
+import '../../widgets/cached_image_widget.dart';
+import '../../../core/constants/tmdb_endpoints.dart';
 
 /// Home screen with real data - Complete implementation
 class HomeScreen extends ConsumerStatefulWidget {
@@ -186,9 +187,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             SliverToBoxAdapter(
               child: Padding(
                 padding: EdgeInsets.symmetric(horizontal: AppDimensions.space16),
-                child: Text(
-                  'Popular Wallpapers',
-                  style: AppTextStyles.sectionTitle,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Popular Wallpapers', style: AppTextStyles.sectionTitle),
+                    TextButton(
+                      onPressed: () {
+                        // Navigate to Search with popularity sort
+                        ref.read(searchQueryProvider.notifier).state = '';
+                        ref.read(sortByProvider.notifier).state = 'popularity.desc';
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const SearchScreen()),
+                        );
+                      },
+                      child: const Text('See more'),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -199,9 +214,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             SliverToBoxAdapter(
               child: Padding(
                 padding: EdgeInsets.symmetric(horizontal: AppDimensions.space16),
-                child: Text(
-                  'Top Rated',
-                  style: AppTextStyles.sectionTitle,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Top Rated', style: AppTextStyles.sectionTitle),
+                    TextButton(
+                      onPressed: () {
+                        ref.read(searchQueryProvider.notifier).state = '';
+                        ref.read(sortByProvider.notifier).state = 'vote_average.desc';
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const SearchScreen()),
+                        );
+                      },
+                      child: const Text('See more'),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -234,39 +262,190 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     separatorBuilder: (_, __) => SizedBox(width: AppDimensions.space12),
                     itemBuilder: (context, index) {
                       final movie = topRatedState.items[index];
-                      return FutureBuilder(
-                        future: movie.hasPoster
-                            ? ImagePipelineService.instance.getLocalVariant(
-                                rawPathOrUrl: movie.posterPath!,
-                                size: 'w500',
-                                isBackdrop: false,
-                                watermark: false,
-                                isPro: true,
-                              )
-                            : null,
-                        builder: (context, snap) {
-                          final file = snap.data;
-                          final widgetImage = (file != null && file.existsSync())
-                              ? Image.file(file, fit: BoxFit.cover)
-                              : Container(color: AppColors.darkCard);
-                          return GestureDetector(
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => MovieDetailScreen(movie: movie),
-                                ),
-                              );
-                            },
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(AppDimensions.radiusMedium),
-                              child: SizedBox(
-                                width: 140,
-                                child: widgetImage,
-                              ),
+                      return GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => MovieDetailScreen(movie: movie),
                             ),
                           );
                         },
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(AppDimensions.radiusMedium),
+                          child: SizedBox(
+                            width: 140,
+                            child: movie.hasPoster
+                                ? CachedImageWidget(
+                                    imageUrl: TMDBEndpoints.posterUrl(movie.posterPath!, size: PosterSize.w500),
+                                    fit: BoxFit.cover,
+                                  )
+                                : Container(color: AppColors.darkCard),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+
+            SliverToBoxAdapter(child: SizedBox(height: AppDimensions.space24)),
+
+            // Trailers Section Header
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: AppDimensions.space16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Latest Trailers', style: AppTextStyles.sectionTitle),
+                    TextButton(
+                      onPressed: () {
+                        ref.read(searchQueryProvider.notifier).state = '';
+                        // Use popularity for trailers discover as proxy
+                        ref.read(sortByProvider.notifier).state = 'popularity.desc';
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const SearchScreen()),
+                        );
+                      },
+                      child: const Text('See more'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            SliverToBoxAdapter(child: SizedBox(height: AppDimensions.space12)),
+
+            // Trailers Horizontal List
+            if (trailersState.items.isEmpty && trailersState.isLoading)
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 240,
+                  child: Center(child: LoadingIndicator()),
+                ),
+              )
+            else if (trailersState.items.isEmpty && trailersState.error != null)
+              SliverToBoxAdapter(
+                child: AppErrorWidget(
+                  message: trailersState.error!,
+                  onRetry: () => ref.read(trailersProvider.notifier).loadTrailers(),
+                ),
+              )
+            else
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 240,
+                  child: ListView.separated(
+                    padding: EdgeInsets.symmetric(horizontal: AppDimensions.space16),
+                    scrollDirection: Axis.horizontal,
+                    itemCount: trailersState.items.length,
+                    separatorBuilder: (_, __) => SizedBox(width: AppDimensions.space12),
+                    itemBuilder: (context, index) {
+                      final movie = trailersState.items[index];
+                      return GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => MovieDetailScreen(movie: movie),
+                            ),
+                          );
+                        },
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(AppDimensions.radiusMedium),
+                          child: SizedBox(
+                            width: 140,
+                            child: movie.hasPoster
+                                ? CachedImageWidget(
+                                    imageUrl: TMDBEndpoints.posterUrl(movie.posterPath!, size: PosterSize.w500),
+                                    fit: BoxFit.cover,
+                                  )
+                                : Container(color: AppColors.darkCard),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+
+            SliverToBoxAdapter(child: SizedBox(height: AppDimensions.space24)),
+
+            // Free To Watch Section Header
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: AppDimensions.space16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Free to Watch', style: AppTextStyles.sectionTitle),
+                    TextButton(
+                      onPressed: () {
+                        ref.read(searchQueryProvider.notifier).state = '';
+                        // Default discover without region/date filters
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const SearchScreen()),
+                        );
+                      },
+                      child: const Text('See more'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            SliverToBoxAdapter(child: SizedBox(height: AppDimensions.space12)),
+
+            // Free To Watch Horizontal List
+            if (freeToWatchState.items.isEmpty && freeToWatchState.isLoading)
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 240,
+                  child: Center(child: LoadingIndicator()),
+                ),
+              )
+            else if (freeToWatchState.items.isEmpty && freeToWatchState.error != null)
+              SliverToBoxAdapter(
+                child: AppErrorWidget(
+                  message: freeToWatchState.error!,
+                  onRetry: () => ref.read(freeToWatchProvider.notifier).loadFreeToWatch(),
+                ),
+              )
+            else
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 240,
+                  child: ListView.separated(
+                    padding: EdgeInsets.symmetric(horizontal: AppDimensions.space16),
+                    scrollDirection: Axis.horizontal,
+                    itemCount: freeToWatchState.items.length,
+                    separatorBuilder: (_, __) => SizedBox(width: AppDimensions.space12),
+                    itemBuilder: (context, index) {
+                      final movie = freeToWatchState.items[index];
+                      return GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => MovieDetailScreen(movie: movie),
+                            ),
+                          );
+                        },
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(AppDimensions.radiusMedium),
+                          child: SizedBox(
+                            width: 140,
+                            child: movie.hasPoster
+                                ? CachedImageWidget(
+                                    imageUrl: TMDBEndpoints.posterUrl(movie.posterPath!, size: PosterSize.w500),
+                                    fit: BoxFit.cover,
+                                  )
+                                : Container(color: AppColors.darkCard),
+                          ),
+                        ),
                       );
                     },
                   ),

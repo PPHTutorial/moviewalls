@@ -3,6 +3,7 @@ import '../../core/utils/logger.dart';
 import '../../domain/entities/movie.dart';
 import '../../services/scraping/scraping_service.dart';
 import 'package:intl/intl.dart';
+import '../../services/storage/cache_policy_service.dart';
 // Data fetching removed for rebuild. Providers now stub empty data.
 
 /// Pagination state
@@ -54,6 +55,7 @@ class MovieScraperSource {
       page: 1,
       extraHeaders: {'x-requested-with': 'XMLHttpRequest'},
       uniqueComposite: key,
+      forceNetwork: CachePolicyService.instance.consumeForceNetwork(),
     );
     return models.map((m) => m.toEntity()).toList();
   }
@@ -68,6 +70,7 @@ class MovieScraperSource {
       page: page,
       extraHeaders: {'x-requested-with': 'XMLHttpRequest'},
       uniqueComposite: key,
+      forceNetwork: CachePolicyService.instance.consumeForceNetwork(),
     );
     return models.map((m) => m.toEntity()).toList();
   }
@@ -82,6 +85,7 @@ class MovieScraperSource {
       page: 1,
       extraHeaders: {'x-requested-with': 'XMLHttpRequest'},
       uniqueComposite: key,
+      forceNetwork: CachePolicyService.instance.consumeForceNetwork(),
     );
     return models.map((m) => m.toEntity()).toList();
   }
@@ -96,6 +100,7 @@ class MovieScraperSource {
       page: 1,
       extraHeaders: {'x-requested-with': 'XMLHttpRequest'},
       uniqueComposite: key,
+      forceNetwork: CachePolicyService.instance.consumeForceNetwork(),
     );
     return models.map((m) => m.toEntity()).toList();
   }
@@ -160,6 +165,7 @@ class MovieScraperSource {
       body: bodyStr,
       post: true,
       uniqueComposite: key,
+      forceNetwork: CachePolicyService.instance.consumeForceNetwork(),
     );
     return models.map((m) => m.toEntity()).toList();
   }
@@ -215,6 +221,7 @@ class MovieScraperSource {
       body: bodyStr,
       post: true,
       uniqueComposite: key,
+      forceNetwork: CachePolicyService.instance.consumeForceNetwork(),
     );
     return models.map((m) => m.toEntity()).toList();
   }

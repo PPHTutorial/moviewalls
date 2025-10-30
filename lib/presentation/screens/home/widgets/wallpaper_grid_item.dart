@@ -4,9 +4,10 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../../../app/themes/app_colors.dart';
 import '../../../../app/themes/app_dimensions.dart';
 import '../../../../app/themes/app_text_styles.dart';
+import '../../../../core/constants/tmdb_endpoints.dart';
 import '../../../../domain/entities/movie.dart';
 import '../../../providers/favorites_provider.dart';
-import '../../../../services/image_processing/image_pipeline_service.dart';
+import '../../../widgets/cached_image_widget.dart';
 
 /// Wallpaper grid item widget
 class WallpaperGridItem extends ConsumerWidget {
@@ -42,37 +43,26 @@ class WallpaperGridItem extends ConsumerWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // Poster image
-              FutureBuilder(
-                future: movie.hasPoster
-                    ? ImagePipelineService.instance.getLocalVariant(
-                        rawPathOrUrl: movie.posterPath!,
-                        size: 'w500',
-                        isBackdrop: false,
-                        watermark: false,
-                        isPro: true,
-                      )
-                    : null,
-                builder: (context, snap) {
-                  final file = snap.data;
-                  if (file != null && file.existsSync()) {
-                    return Image.file(file, fit: BoxFit.cover);
-                  }
-                  if (!movie.hasPoster) {
-                    return Container(
-                      color: AppColors.darkCard,
-                      child: const Center(
-                        child: Icon(
-                          Icons.movie_outlined,
-                          color: AppColors.textDisabled,
-                          size: 40,
-                        ),
-                      ),
-                    );
-                  }
-                  return Container(color: AppColors.darkCard);
-                },
-              ),
+              // Poster image via TMDB URLs
+              if (movie.hasPoster)
+                CachedImageWidget(
+                  imageUrl: TMDBEndpoints.posterUrl(
+                    movie.posterPath!,
+                    size: PosterSize.w500,
+                  ),
+                  fit: BoxFit.cover,
+                )
+              else
+                Container(
+                  color: AppColors.darkCard,
+                  child: const Center(
+                    child: Icon(
+                      Icons.movie_outlined,
+                      color: AppColors.textDisabled,
+                      size: 40,
+                    ),
+                  ),
+                ),
               
               // Gradient overlay
               Positioned(

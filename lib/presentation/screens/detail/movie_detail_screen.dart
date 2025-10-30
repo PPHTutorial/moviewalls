@@ -20,6 +20,7 @@ import '../../../services/scraping/scraping_service.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../services/image_processing/image_pipeline_service.dart';
 import '../../../services/image_processing/image_optimizer_service.dart';
+import '../../../core/constants/tmdb_endpoints.dart';
 
 /// Complete movie detail screen with posters and backdrops gallery
 class MovieDetailScreen extends ConsumerStatefulWidget {
@@ -155,68 +156,66 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
           SliverToBoxAdapter(
             child: SizedBox(
               height: 300.h,
-              child: FutureBuilder(
-                future: _buildHeroLocalFile(),
-                builder: (context, snapshot) {
-                  final file = snapshot.data;
-                  return Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      if (file != null && file.existsSync())
-                        Image.file(file, fit: BoxFit.cover)
-                      else if (widget.movie.hasBackdrop)
-                        CachedImageWidget(
-                          imageUrl: _imageUrl(widget.movie.backdropPath!, size: 'w1280'),
-                          fit: BoxFit.cover,
-                        )
-                      else if (widget.movie.hasPoster)
-                        CachedImageWidget(
-                          imageUrl: _imageUrl(widget.movie.posterPath!, size: 'w780'),
-                          fit: BoxFit.cover,
-                        )
-                      else
-                        Container(color: AppColors.darkSurface),
-                      // gradient overlay
-                      Container(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (widget.movie.hasBackdrop)
+                    CachedImageWidget(
+                      imageUrl: TMDBEndpoints.backdropUrl(
+                        widget.movie.backdropPath!,
+                        size: BackdropSize.w1280,
+                      ),
+                      fit: BoxFit.cover,
+                    )
+                  else if (widget.movie.hasPoster)
+                    CachedImageWidget(
+                      imageUrl: TMDBEndpoints.posterUrl(
+                        widget.movie.posterPath!,
+                        size: PosterSize.w780,
+                      ),
+                      fit: BoxFit.cover,
+                    )
+                  else
+                    Container(color: AppColors.darkSurface),
+                  // gradient overlay
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          Colors.black.withOpacity(0.6),
+                        ],
+                      ),
+                    ),
+                  ),
+                  // Watermark overlay
+                  Positioned(
+                    right: AppDimensions.space12,
+                    bottom: AppDimensions.space12,
+                    child: Opacity(
+                      opacity: AppConstants.watermarkOpacity,
+                      child: Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: AppDimensions.space8,
+                          vertical: AppDimensions.space4,
+                        ),
                         decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.transparent,
-                              Colors.black.withOpacity(0.6),
-                            ],
+                          color: Colors.black.withOpacity(0.4),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          AppConstants.watermarkText,
+                          style: AppTextStyles.caption.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
                       ),
-                      // Watermark overlay
-                      Positioned(
-                        right: AppDimensions.space12,
-                        bottom: AppDimensions.space12,
-                        child: Opacity(
-                          opacity: AppConstants.watermarkOpacity,
-                          child: Container(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: AppDimensions.space8,
-                              vertical: AppDimensions.space4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.4),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              AppConstants.watermarkText,
-                              style: AppTextStyles.caption.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-                },
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -456,89 +455,26 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
         itemCount: images.length,
         itemBuilder: (context, index) {
           final rawPath = images[index];
-          final size = _selectedTab == 0 ? 'w1280' : 'w780';
-          return FutureBuilder(
-            future: ImagePipelineService.instance.getLocalVariant(
-              rawPathOrUrl: rawPath,
-              size: size,
-              isBackdrop: _selectedTab == 0,
-              watermark: false,
-              isPro: true,
-            ),
-            builder: (context, snap) {
-              final file = snap.data;
-              return GestureDetector(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => _ImageFullScreenView(
-                        imageUrl: file?.path ?? _imageUrl(rawPath, size: size),
-                        rawPath: rawPath,
-                        isBackdrop: _selectedTab == 0,
-                        movieTitle: widget.movie.title,
-                      ),
-                    ),
-                  );
-                },
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(AppDimensions.radiusMedium),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      if (file != null && file.existsSync())
-                        Image.file(file, fit: BoxFit.cover)
-                      else
-                        CachedImageWidget(
-                          imageUrl: _imageUrl(rawPath, size: size),
-                          fit: BoxFit.cover,
-                        ),
-                      Positioned(
-                        right: 6,
-                        bottom: 6,
-                        child: Opacity(
-                          opacity: 0.5,
-                          child: Text(
-                            AppConstants.watermarkText,
-                            style: AppTextStyles.caption.copyWith(color: Colors.white),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          );
+          if (_selectedTab == 0) {
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(AppDimensions.radiusMedium),
+              child: CachedImageWidget(
+                imageUrl: TMDBEndpoints.backdropUrl(rawPath, size: BackdropSize.w1280),
+                fit: BoxFit.cover,
+              ),
+            );
+          } else {
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(AppDimensions.radiusMedium),
+              child: CachedImageWidget(
+                imageUrl: TMDBEndpoints.posterUrl(rawPath, size: PosterSize.w780),
+                fit: BoxFit.cover,
+              ),
+            );
+          }
         },
       ),
     );
-  }
-
-  Future<File?> _buildHeroLocalFile() async {
-    try {
-      if (widget.movie.hasBackdrop) {
-        return await ImagePipelineService.instance.getLocalVariant(
-          rawPathOrUrl: widget.movie.backdropPath!,
-          size: 'w1280',
-          isBackdrop: true,
-          watermark: false,
-          isPro: true,
-        );
-      }
-      if (widget.movie.hasPoster) {
-        return await ImagePipelineService.instance.getLocalVariant(
-          rawPathOrUrl: widget.movie.posterPath!,
-          size: 'w780',
-          isBackdrop: false,
-          watermark: false,
-          isPro: true,
-        );
-      }
-      return null;
-    } catch (_) {
-      return null;
-    }
   }
 
   Widget _buildBottomActions() {
@@ -1158,8 +1094,8 @@ class _ImageFullScreenViewState extends State<_ImageFullScreenView> {
 
   Future<String?> _pickSize(BuildContext context, bool isBackdrop) async {
     final sizes = isBackdrop
-        ? <String>['w780', 'w1280', 'original']
-        : <String>['w500', 'w780', 'original'];
+        ? <String>['w780', 'w900', 'w1280', 'original']
+        : <String>['w342', 'w500', 'w780', 'w900', 'original'];
     return showModalBottomSheet<String>(
       context: context,
       backgroundColor: AppColors.darkSurface,

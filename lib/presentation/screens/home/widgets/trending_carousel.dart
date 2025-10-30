@@ -5,9 +5,10 @@ import 'package:smooth_page_indicator/smooth_page_indicator.dart';
 import '../../../../app/themes/app_colors.dart';
 import '../../../../app/themes/app_dimensions.dart';
 import '../../../../app/themes/app_text_styles.dart';
-import 'package:movie_posters/services/image_processing/image_pipeline_service.dart';
-import '../../search/search_screen.dart';
+import '../../../../core/constants/tmdb_endpoints.dart';
 import '../../../../domain/entities/movie.dart';
+import '../../../widgets/cached_image_widget.dart';
+import '../../search/search_screen.dart';
 
 /// Trending movies carousel
 class TrendingCarousel extends StatefulWidget {
@@ -33,11 +34,8 @@ class _TrendingCarouselState extends State<TrendingCarousel> {
       return const SizedBox.shrink();
     }
      
-    
-    // Take only first 10 for carousel
     final limit = 5;
     final base = widget.movies.take(limit).toList();
-    // create a sentinel for see more
     final carouselMovies = base;
     
     return Column(
@@ -69,7 +67,7 @@ class _TrendingCarouselState extends State<TrendingCarousel> {
         SizedBox(height: AppDimensions.space12),
         AnimatedSmoothIndicator(
           activeIndex: _currentIndex,
-          count: carouselMovies.length,
+          count: carouselMovies.length + 1,
           effect: ExpandingDotsEffect(
             activeDotColor: AppColors.accentColor,
             dotColor: AppColors.textDisabled,
@@ -102,44 +100,34 @@ class _TrendingCarouselState extends State<TrendingCarousel> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              FutureBuilder(
-                future: movie.hasBackdrop
-                    ? ImagePipelineService.instance.getLocalVariant(
-                        rawPathOrUrl: movie.backdropPath!,
-                        size: 'w1280',
-                        isBackdrop: true,
-                        watermark: false,
-                        isPro: true,
-                      )
-                    : movie.hasPoster
-                        ? ImagePipelineService.instance.getLocalVariant(
-                            rawPathOrUrl: movie.posterPath!,
-                            size: 'w780',
-                            isBackdrop: false,
-                            watermark: false,
-                            isPro: true,
-                          )
-                        : null,
-                builder: (context, snap) {
-                  final file = snap.data;
-                  if (file != null && file.existsSync()) {
-                    return Image.file(file, fit: BoxFit.cover);
-                  }
-                  if (!movie.hasBackdrop && !movie.hasPoster) {
-                    return Container(
-                      color: AppColors.darkCard,
-                      child: const Center(
-                        child: Icon(
-                          Icons.movie_outlined,
-                          color: AppColors.textDisabled,
-                          size: 60,
-                        ),
-                      ),
-                    );
-                  }
-                  return Container(color: AppColors.darkCard);
-                },
-              ),
+              // Backdrop image
+              if (movie.hasBackdrop)
+                CachedImageWidget(
+                  imageUrl: TMDBEndpoints.backdropUrl(
+                    movie.backdropPath!,
+                    size: BackdropSize.w1280,
+                  ),
+                  fit: BoxFit.cover,
+                )
+              else if (movie.hasPoster)
+                CachedImageWidget(
+                  imageUrl: TMDBEndpoints.posterUrl(
+                    movie.posterPath!,
+                    size: PosterSize.w780,
+                  ),
+                  fit: BoxFit.cover,
+                )
+              else
+                Container(
+                  color: AppColors.darkCard,
+                  child: const Center(
+                    child: Icon(
+                      Icons.movie_outlined,
+                      color: AppColors.textDisabled,
+                      size: 60,
+                    ),
+                  ),
+                ),
               
               // Gradient overlay
               Container(

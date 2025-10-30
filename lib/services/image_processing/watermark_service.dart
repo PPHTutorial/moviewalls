@@ -51,17 +51,16 @@ class WatermarkService {
         throw Exception('Failed to decode image');
       }
       
-      // Calculate watermark size and position
+      // Calculate watermark size and centered position
       final watermarkText = AppConstants.watermarkText;
-      final fontSize = (image.height * AppConstants.watermarkSize).toInt();
-      final padding = 16;
+      final fontSize = (image.height * AppConstants.watermarkSize).toInt().clamp(12, 128);
+      // crude text width estimate
+      final textWidth = (watermarkText.length * fontSize ~/ 2);
+      final textHeight = fontSize;
+      final x = ((image.width - textWidth) / 2).round();
+      final y = ((image.height - textHeight) / 2).round();
       
-      // Draw watermark text on image
-      // Position: bottom-right corner
-      final x = image.width - (watermarkText.length * fontSize ~/ 2) - padding;
-      final y = image.height - fontSize - padding;
-      
-      // Draw text with shadow for visibility
+      // Draw text (single pass) centered with opacity
       img.drawString(
         image,
         watermarkText,
@@ -74,7 +73,7 @@ class WatermarkService {
       // Encode back to bytes
       final processedBytes = img.encodePng(image);
       
-      AppLogger.i('Watermark added successfully');
+      AppLogger.i('Watermark added successfully (centered)');
       return Uint8List.fromList(processedBytes);
     } catch (e, stackTrace) {
       AppLogger.e('Error adding watermark', e, stackTrace);

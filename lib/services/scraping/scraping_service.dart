@@ -148,6 +148,12 @@ class ScrapingService {
             ?? el.querySelector('.title, h2, h3, .name')?.text.trim()
             ?? '';
 
+        // Skip refine widgets (Sort / Where to watch / Filters)
+        final tLow = title.toLowerCase();
+        if (tLow == 'sort' || tLow.startsWith('where to watch') || tLow.contains('filters')) {
+          return null;
+        }
+
         // Poster path
         String? posterPath;
         final img = el.querySelector('img');
@@ -212,48 +218,42 @@ class ScrapingService {
   /// Restore the search HTML extraction logic (TMDB search page)
   List<MovieModel> extractSearchResultsFromHtml(String htmlBody) {
     final document = html_parser.parse(htmlBody);
-    final List<Element> results = document.querySelectorAll('.search_result, .card.style_1, .card, .item, .result');
-    return results.map((el) {
+    final List<Element> results = document.querySelectorAll('.search_result, .card, .item, .result');
+    final out = <MovieModel>[];
+    final seen = <int>{};
+    for (final el in results) {
       try {
-        final options = el.querySelector('.options');
-        int id = int.tryParse(options?.attributes['data-id'] ?? '0') ?? 0;
-        String mediaType = options?.attributes['data-media-type'] ?? 'movie';
-
-        Element? link = el.querySelector('h2 > a[href*="/movie/"], h2 > a[href*="/tv/"], a[href*="/movie/"], a[href*="/tv/"]');
+        final link = el.querySelector('h2 > a[href*="/movie/"], h2 > a[href*="/tv/"], a[href*="/movie/"], a[href*="/tv/"]');
         String? href = link?.attributes['href'] ?? el.querySelector('[href*="/movie/"], [href*="/tv/"]')?.attributes['href'];
-        if ((id == 0 || mediaType.isEmpty) && href != null) {
-          final match = RegExp(r'/(movie|tv)/(\d+)').firstMatch(href);
-          if (match != null) {
-            mediaType = mediaType.isEmpty ? (match.group(1) ?? 'movie') : mediaType;
-            id = id == 0 ? (int.tryParse(match.group(2) ?? '0') ?? 0) : id;
-          }
-        }
+        if (href == null) continue; // ignore non-content cards like refine widgets
+        final match = RegExp(r'/(movie|tv)/(\d+)').firstMatch(href);
+        if (match == null) continue;
+        final mediaType = match.group(1) ?? 'movie';
+        final id = int.tryParse(match.group(2) ?? '0') ?? 0;
+        if (id == 0 || seen.contains(id)) continue;
 
-        String title = el.querySelector('h2 > a')?.attributes['title']?.trim()
-            ?? el.querySelector('h2 > a')?.text.trim()
-            ?? link?.attributes['title']?.trim()
-            ?? link?.text.trim()
-            ?? el.querySelector('.title, h2, h3, .name')?.text.trim()
-            ?? '';
+        String title = link?.attributes['title']?.trim() ?? link?.text.trim() ?? '';
+        if (title.isEmpty) {
+          title = el.querySelector('.title, h2, h3, .name')?.text.trim() ?? '';
+        }
+        if (title.isEmpty) continue;
+        // Skip refine/sort widgets
+        final low = title.toLowerCase();
+        if (low == 'sort' || low.startsWith('where to watch')) continue;
 
         String? posterPath;
-        final img = el.querySelector('img');
-        if (img != null) {
-          posterPath = img.attributes['data-src'] ?? img.attributes['src'];
-          posterPath ??= img.attributes['data-srcset']?.split(',').first.trim().split(' ').first;
+        final imgEl = el.querySelector('img');
+        if (imgEl != null) {
+          posterPath = imgEl.attributes['data-src'] ?? imgEl.attributes['src'] ?? imgEl.attributes['data-srcset']?.split(',').first.trim().split(' ').first;
           final idx = posterPath != null ? posterPath.indexOf('/t/p/') : -1;
           if (idx != -1 && posterPath != null) {
             posterPath = posterPath.substring(idx);
           }
         }
-
         final overview = el.querySelector('.overview, .content p, .details p')?.text.trim();
-
-        if (id == 0 && title.isEmpty && posterPath == null) return null;
-
-        return MovieModel(
+        final model = MovieModel(
           id: id,
-          title: title.isNotEmpty ? title : 'Unknown',
+          title: title,
           overview: overview,
           posterPath: posterPath,
           backdropPath: null,
@@ -267,10 +267,13 @@ class ScrapingService {
           originalLanguage: null,
           mediaType: mediaType,
         );
+        out.add(model);
+        seen.add(id);
       } catch (_) {
-        return null;
+        // skip
       }
-    }).whereType<MovieModel>().toList();
+    }
+    return out;
   }
 
   /// Clear cache for a scraping endpoint

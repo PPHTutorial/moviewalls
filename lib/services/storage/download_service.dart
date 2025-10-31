@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
+import 'package:flutter/services.dart';
 import 'package:movie_posters/services/permissions/permission_service.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../core/constants/app_constants.dart';
@@ -50,6 +51,7 @@ class DownloadService {
   
   final Map<String, DownloadTask> _activeTasks = {};
   final List<DownloadTask> _downloadHistory = [];
+  final Set<String> _downloadedUrls = {}; // Track downloaded URLs to avoid duplicates
   int _activeDownloads = 0;
   
   DownloadService._()
@@ -69,6 +71,18 @@ class DownloadService {
     ImageQuality quality = ImageQuality.hd,
     Function(double)? onProgress,
   }) async {
+    // Check if already downloaded
+    if (_downloadedUrls.contains(imageUrl)) {
+      AppLogger.i('Image already downloaded, skipping: $imageUrl');
+      // Find existing download
+      final existingTask = _downloadHistory
+          .where((task) => task.url == imageUrl && task.filePath != null)
+          .firstOrNull;
+      if (existingTask?.filePath != null) {
+        return existingTask!.filePath;
+      }
+    }
+    
     // Check concurrent downloads limit
     if (_activeDownloads >= AppConstants.maxConcurrentDownloads) {
       throw Exception('Maximum concurrent downloads reached. Please wait.');
@@ -116,30 +130,27 @@ class DownloadService {
       
       Uint8List imageBytes = Uint8List.fromList(response.data!);
       
-      // Update status - processing
+      // Process image: add watermark if user is not pro
       task.status = DownloadStatus.processing;
-      AppLogger.download('Processing image', details: 'Quality: ${quality.name}');
+      onProgress?.call(0.7); // 70% downloaded, 30% processing
       
-      // Optimize image
-      imageBytes = await _imageOptimizer.optimizeImage(
-        imageBytes: imageBytes,
-        quality: quality,
-      );
-      
-      // Add watermark if free user
       imageBytes = await _watermarkService.processImage(
         imageBytes: imageBytes,
         isPro: isPro,
-        quality: quality.name,
+        quality: 'original',
       );
       
       // Save to device
+      onProgress?.call(0.9);
       final filePath = await _saveToDevice(imageBytes, fileName);
       
       // Update status - completed
       task.status = DownloadStatus.completed;
       task.progress = 1.0;
       task.filePath = filePath;
+      
+      // Track downloaded URL to avoid re-downloading
+      _downloadedUrls.add(imageUrl);
       
       _downloadHistory.add(task);
       AppLogger.download('Download completed', details: filePath);
@@ -223,79 +234,99 @@ class DownloadService {
   /// Save image bytes to device storage (Downloads folder)
   Future<String> _saveToDevice(Uint8List bytes, String fileName) async {
     try {
-      Directory targetDirectory;
-      
       if (Platform.isAndroid) {
-        // Android: Use the actual Downloads folder
-        // For Android, we need to access the Downloads directory
-        final externalDir = await getExternalStorageDirectory();
-        if (externalDir == null) {
-          throw Exception('Failed to get external storage directory');
-        }
-        
-        // Navigate to the actual Downloads folder
-        // On most Android devices, Downloads is at /storage/emulated/0/Download
-        String downloadsPath;
-        if (externalDir.path.contains('Android')) {
-          // Navigate up to get to the Downloads folder
-          final List<String> pathParts = externalDir.path.split('/');
-          final emulatedIndex = pathParts.indexWhere((part) => part == 'emulated' || part == 'sdcard');
-          if (emulatedIndex != -1) {
-            // Build path to Downloads: /storage/emulated/0/Download
-            final basePath = pathParts.sublist(0, emulatedIndex + 2).join('/');
-            downloadsPath = '$basePath/Download';
+        // Use native method to save via MediaStore (Android 10+) or direct save (Android 9-)
+        try {
+          const platform = MethodChannel('com.movieposters.media_scanner');
+          final result = await platform.invokeMethod('saveImageToDownloads', {
+            'fileName': fileName,
+            'bytes': bytes,
+          }) as Map<dynamic, dynamic>;
+          
+          final filePath = result['path'] as String?;
+          if (filePath != null && filePath.isNotEmpty) {
+            AppLogger.i('File saved to: $filePath');
+            return filePath;
           } else {
-            // Fallback to common path
-            downloadsPath = '/storage/emulated/0/Download';
+            throw Exception('Native method returned empty path');
           }
-        } else {
-          downloadsPath = '/storage/emulated/0/Download';
+        } catch (e) {
+          AppLogger.e('Native save failed, trying fallback', e);
+          // Fallback to old method for older Android versions
+          return await _saveToDeviceLegacy(bytes, fileName);
         }
-        
-        targetDirectory = Directory(downloadsPath);
-        
-        // Verify the Downloads directory exists, create if not
-        if (!await targetDirectory.exists()) {
-          // Try alternative paths
-          final altPaths = [
-            '/storage/emulated/0/Download',
-            '/sdcard/Download',
-            '${externalDir.parent.path}/Download',
-          ];
-          
-          for (final path in altPaths) {
-            final dir = Directory(path);
-            if (await dir.exists()) {
-              targetDirectory = dir;
-              break;
-            }
-          }
-          
-          // If still not found, try to create it
-          if (!await targetDirectory.exists()) {
-            await targetDirectory.create(recursive: true);
-          }
-        }
-        
       } else if (Platform.isIOS) {
-        // iOS: Save to app's Documents directory and move to Photos if possible
+        // iOS: Save to app's Documents directory
         final directory = await getApplicationDocumentsDirectory();
-        targetDirectory = Directory(directory.path);
+        final targetDirectory = Directory(directory.path);
+        final filePath = '${targetDirectory.path}/$fileName';
+        final file = File(filePath);
+        await file.writeAsBytes(bytes);
+        AppLogger.i('File saved to: $filePath');
+        return filePath;
       } else {
         throw UnsupportedError('Platform not supported');
       }
-      
-      // Save file
-      final filePath = '${targetDirectory.path}/$fileName';
-      final file = File(filePath);
-      await file.writeAsBytes(bytes);
-      
-      AppLogger.i('File saved to: $filePath');
-      return filePath;
     } catch (e, stackTrace) {
       AppLogger.e('Error saving file', e, stackTrace);
       rethrow;
     }
+  }
+
+  /// Legacy save method for older Android versions or fallback
+  Future<String> _saveToDeviceLegacy(Uint8List bytes, String fileName) async {
+    final externalDir = await getExternalStorageDirectory();
+    if (externalDir == null) {
+      throw Exception('Failed to get external storage directory');
+    }
+    
+    // Navigate to Downloads folder
+    String downloadsPath;
+    if (externalDir.path.contains('Android')) {
+      final List<String> pathParts = externalDir.path.split('/');
+      final emulatedIndex = pathParts.indexWhere((part) => part == 'emulated' || part == 'sdcard');
+      if (emulatedIndex != -1) {
+        final basePath = pathParts.sublist(0, emulatedIndex + 2).join('/');
+        downloadsPath = '$basePath/Download';
+      } else {
+        downloadsPath = '/storage/emulated/0/Download';
+      }
+    } else {
+      downloadsPath = '/storage/emulated/0/Download';
+    }
+    
+    final targetDirectory = Directory(downloadsPath);
+    if (!await targetDirectory.exists()) {
+      // Try alternative paths
+      final altPaths = [
+        '/storage/emulated/0/Download',
+        '/sdcard/Download',
+        '${externalDir.parent.path}/Download',
+      ];
+      
+      for (final path in altPaths) {
+        final dir = Directory(path);
+        if (await dir.exists()) {
+          downloadsPath = path;
+          break;
+        }
+      }
+    }
+    
+    final filePath = '$downloadsPath/$fileName';
+    final file = File(filePath);
+    await file.writeAsBytes(bytes);
+    
+    // Scan file for older Android
+    try {
+      const platform = MethodChannel('com.movieposters.media_scanner');
+      await platform.invokeMethod('scanFile', {'path': filePath});
+    } catch (e) {
+      AppLogger.e('Failed to scan file', e);
+    }
+    
+    AppLogger.i('File saved to (legacy): $filePath');
+    return filePath;
   }
   
   /// Generate filename
@@ -336,7 +367,53 @@ class DownloadService {
   /// Clear download history
   void clearHistory() {
     _downloadHistory.clear();
+    _downloadedUrls.clear();
     AppLogger.i('Download history cleared');
+  }
+
+  /// Download multiple wallpapers with progress tracking
+  Future<Map<String, String?>> downloadAllWallpapers({
+    required List<String> imageUrls,
+    required String movieTitle,
+    required bool isPro,
+    required Function(double totalProgress, int completed, int total, String? currentItem) onProgress,
+  }) async {
+    final results = <String, String?>{};
+    final total = imageUrls.length;
+    int completed = 0;
+
+    for (int i = 0; i < imageUrls.length; i++) {
+      final url = imageUrls[i];
+      try {
+        onProgress(i / total, completed, total, 'Downloading ${i + 1}/$total...');
+        
+        final filePath = await downloadWallpaper(
+          imageUrl: url,
+          movieTitle: movieTitle,
+          isPro: isPro,
+          quality: ImageQuality.original,
+          onProgress: (progress) {
+            // Calculate overall progress
+            final overallProgress = (i + progress) / total;
+            onProgress(overallProgress, completed, total, 'Downloading ${i + 1}/$total...');
+          },
+        );
+        
+        results[url] = filePath;
+        completed++;
+        onProgress((i + 1) / total, completed, total, 'Downloaded ${i + 1}/$total');
+      } catch (e) {
+        AppLogger.e('Failed to download: $url', e);
+        results[url] = null;
+      }
+    }
+    
+    return results;
+  }
+
+  /// Check if URL is already downloaded
+  bool isAlreadyDownloaded(String url) {
+    return _downloadedUrls.contains(url);
   }
 }
 

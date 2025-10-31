@@ -14,11 +14,15 @@ import '../../search/search_screen.dart';
 class TrendingCarousel extends StatefulWidget {
   final List<Movie> movies;
   final Function(Movie)? onMovieTap;
-  
+  final bool seeMore;
+  final int limit;
+
   const TrendingCarousel({
     super.key,
     required this.movies,
     this.onMovieTap,
+    required this.seeMore,
+    required this.limit,
   });
 
   @override
@@ -33,25 +37,26 @@ class _TrendingCarouselState extends State<TrendingCarousel> {
     if (widget.movies.isEmpty) {
       return const SizedBox.shrink();
     }
-     
-    final limit = 5;
-    final base = widget.movies.take(limit).toList();
+
+    final base = widget.movies.take(widget.limit).toList();
     final carouselMovies = base;
-    
+
     return Column(
       children: [
         CarouselSlider.builder(
-          itemCount: carouselMovies.length + 1,
+          itemCount: widget.seeMore
+              ? carouselMovies.length + 1
+              : carouselMovies.length,
           itemBuilder: (context, index, realIndex) {
-            if (index == carouselMovies.length) {
+            if (widget.seeMore) {
               return _buildSeeMoreCard(context);
             }
             final movie = carouselMovies[index];
             return _buildCarouselItem(movie);
           },
           options: CarouselOptions(
-            height: AppDimensions.carouselHeight,
-            viewportFraction: 0.85,
+            height: 220.h,
+            viewportFraction: 0.95,
             enlargeCenterPage: true,
             autoPlay: true,
             autoPlayInterval: const Duration(seconds: 5),
@@ -79,11 +84,11 @@ class _TrendingCarouselState extends State<TrendingCarousel> {
       ],
     );
   }
-  
+
   Widget _buildCarouselItem(Movie movie) {
     return GestureDetector(
       onTap: () => widget.onMovieTap?.call(movie),
-      child: Container(
+      child: Container(       
         margin: EdgeInsets.symmetric(horizontal: AppDimensions.space4),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(AppDimensions.radiusLarge),
@@ -128,7 +133,7 @@ class _TrendingCarouselState extends State<TrendingCarousel> {
                     ),
                   ),
                 ),
-              
+
               // Gradient overlay
               Container(
                 decoration: BoxDecoration(
@@ -142,7 +147,7 @@ class _TrendingCarouselState extends State<TrendingCarousel> {
                   ),
                 ),
               ),
-              
+
               // Movie info
               Positioned(
                 bottom: 0,
@@ -253,4 +258,3 @@ class _TrendingCarouselState extends State<TrendingCarousel> {
     );
   }
 }
-

@@ -1,33 +1,31 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../../../app/themes/app_colors.dart';
 import '../../../../app/themes/app_dimensions.dart';
 import '../../../../app/themes/app_text_styles.dart';
 import '../../../../core/constants/tmdb_endpoints.dart';
 import '../../../../domain/entities/movie.dart';
-import '../../../providers/favorites_provider.dart';
 import '../../../widgets/cached_image_widget.dart';
 
-/// Wallpaper grid item widget
-class WallpaperGridItem extends ConsumerWidget {
+/// Horizontal movie card with title, rating, and type badge
+class HorizontalMovieCard extends StatelessWidget {
   final Movie movie;
+  final String typeBadge; // e.g., "Popular", "Top Rated", "Latest Trailers"
   final VoidCallback? onTap;
-  final bool showFavoriteButton;
-  
-  const WallpaperGridItem({
+
+  const HorizontalMovieCard({
     super.key,
     required this.movie,
+    required this.typeBadge,
     this.onTap,
-    this.showFavoriteButton = true,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final isFavorite = ref.watch(isFavoriteProvider(movie.id));
+  Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
+        width: 140,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(AppDimensions.radiusMedium),
           boxShadow: [
@@ -43,7 +41,7 @@ class WallpaperGridItem extends ConsumerWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // Poster image via TMDB URLs
+              // Poster image
               if (movie.hasPoster)
                 CachedImageWidget(
                   imageUrl: TMDBEndpoints.posterUrl(
@@ -63,28 +61,52 @@ class WallpaperGridItem extends ConsumerWidget {
                     ),
                   ),
                 ),
-              
-              // Gradient overlay
+
+              // Gradient overlay at bottom
               Positioned(
                 bottom: 0,
                 left: 0,
                 right: 0,
                 child: Container(
-                  height: 105.h,
+                  height: 100.h,
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
                       colors: [
                         Colors.transparent,
-                        Colors.black.withOpacity(0.8),
+                        Colors.black.withOpacity(0.9),
                       ],
                     ),
                   ),
                 ),
               ),
-              
-              // Movie info
+
+              // Type badge at top
+              Positioned(
+                top: 8.h,
+                left: 8.w,
+                child: Container(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 8.w,
+                    vertical: 4.h,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.accentColor,
+                    borderRadius: BorderRadius.circular(AppDimensions.radiusSmall),
+                  ),
+                  child: Text(
+                    typeBadge,
+                    style: AppTextStyles.caption.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 10.sp,
+                    ),
+                  ),
+                ),
+              ),
+
+              // Title and rating at bottom
               Positioned(
                 bottom: 0,
                 left: 0,
@@ -99,14 +121,14 @@ class WallpaperGridItem extends ConsumerWidget {
                       Text(
                         movie.title,
                         style: AppTextStyles.labelMedium.copyWith(
-                          color: AppColors.textPrimary,
+                          color: Colors.white,
                           fontWeight: FontWeight.w600,
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
                       SizedBox(height: 4.h),
-                      // Rating and year
+                      // Rating
                       Row(
                         children: [
                           Icon(
@@ -118,49 +140,15 @@ class WallpaperGridItem extends ConsumerWidget {
                           Text(
                             movie.formattedRating,
                             style: AppTextStyles.caption.copyWith(
-                              color: AppColors.textPrimary,
+                              color: Colors.white,
                             ),
                           ),
-                          if (movie.releaseYear != null) ...[
-                            SizedBox(width: 8.w),
-                            Text(
-                              '• ${movie.releaseYear}',
-                              style: AppTextStyles.caption.copyWith(
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
-                          ],
                         ],
                       ),
                     ],
                   ),
                 ),
               ),
-              
-              // Favorite button
-              if (showFavoriteButton)
-                Positioned(
-                  top: AppDimensions.space8,
-                  right: AppDimensions.space8,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.5),
-                      shape: BoxShape.circle,
-                    ),
-                    child: IconButton(
-                      icon: Icon(
-                        isFavorite ? Icons.favorite : Icons.favorite_border,
-                        color: isFavorite ? AppColors.error : Colors.white,
-                      ),
-                      iconSize: 20.w,
-                      padding: EdgeInsets.all(AppDimensions.space8),
-                      constraints: const BoxConstraints(),
-                      onPressed: () {
-                        ref.read(favoritesProviders.notifier).toggleFavorite(movie);
-                      },
-                    ),
-                  ),
-                ),
             ],
           ),
         ),

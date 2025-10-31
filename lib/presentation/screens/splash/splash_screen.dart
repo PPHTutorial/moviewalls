@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../../app/themes/app_colors.dart';
 import '../../../app/themes/app_text_styles.dart';
-import '../../../core/constants/app_constants.dart';
 import '../../../services/permissions/permission_service.dart';
+import '../../widgets/app_logo.dart';
 import '../home/home_screen.dart';
 
 /// Splash screen displayed while app initializes
@@ -85,22 +85,12 @@ class _SplashScreenState extends State<SplashScreen>
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children:  [
-              // App Logo/Icon
-              Icon(
-                Icons.movie_filter_rounded,
-                size: 100.w,
-                color: AppColors.accentColor,
+              // App Logo
+              AppLogo(
+                height: 120.h,
+                padding: EdgeInsets.symmetric(horizontal: 40.w),
               ),
               SizedBox(height: 24.h),
-              // App Name
-              Text(
-                AppConstants.appName,
-                style: AppTextStyles.headline1.copyWith(
-                  color: AppColors.textPrimary,
-                  fontSize: 36.sp,
-                ),
-              ),
-              SizedBox(height: 8.h),
               // Tagline
               Text(
                 'Cinematic Wallpapers',

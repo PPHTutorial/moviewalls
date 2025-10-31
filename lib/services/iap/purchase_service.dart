@@ -135,12 +135,25 @@ class PurchaseService {
       
       final purchaseParam = PurchaseParam(productDetails: product);
       
-      // Purchase
-      final result = await _inAppPurchase.buyNonConsumable(
-        purchaseParam: purchaseParam,
-      );
+      // Determine if it's a subscription or one-time purchase
+      bool isSubscription = productId == AppConstants.iapMonthly || 
+                           productId == AppConstants.iapYearly;
       
-      AppLogger.i('Purchase initiated: ${product.id}');
+      // Purchase based on product type
+      bool result;
+      if (isSubscription) {
+        // Use buyConsumable for subscriptions (works better with subscription handling)
+        result = await _inAppPurchase.buyConsumable(
+          purchaseParam: purchaseParam,
+        );
+      } else {
+        // Lifetime purchase is non-consumable
+        result = await _inAppPurchase.buyNonConsumable(
+          purchaseParam: purchaseParam,
+        );
+      }
+      
+      AppLogger.i('Purchase initiated: ${product.id} (subscription: $isSubscription)');
       return result;
     } catch (e, stackTrace) {
       AppLogger.e('Error purchasing product', e, stackTrace);

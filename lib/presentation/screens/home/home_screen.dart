@@ -3,20 +3,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/themes/app_colors.dart';
 import '../../../app/themes/app_text_styles.dart';
 import '../../../app/themes/app_dimensions.dart';
-import '../../../core/constants/app_constants.dart';
 import '../../../services/permissions/permission_service.dart';
 import '../../providers/movie_provider.dart';
 import '../../widgets/loading_indicator.dart';
 import '../../widgets/error_widget.dart';
 import 'widgets/trending_carousel.dart';
-import 'widgets/wallpaper_grid_item.dart';
+import 'widgets/horizontal_movie_card.dart';
 import '../detail/movie_detail_screen.dart';
 import '../search/search_screen.dart';
 import '../favorites/favorites_screen.dart';
 import '../settings/settings_screen.dart';
 import '../../widgets/ad_banner_widget.dart';
-import '../../widgets/cached_image_widget.dart';
-import '../../../core/constants/tmdb_endpoints.dart';
+import '../../widgets/app_logo.dart';
 
 /// Home screen with real data - Complete implementation
 class HomeScreen extends ConsumerStatefulWidget {
@@ -69,22 +67,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final trendingMoviesState = ref.watch(trendingMoviesProvider);
-    final popularMoviesState = ref.watch(popularMoviesProvider);
+    final trendingAgg = ref.watch(trendingAggProvider);
+    final popularAgg = ref.watch(popularAggProvider);
     final topRatedState = ref.watch(topRatedProvider);
+    final trailersAgg = ref.watch(trailersAggProvider);
+    final freeAgg = ref.watch(freeAggProvider);
     // Get provider states for new sections
-    final trailersState = ref.watch(trailersProvider);
-    final freeToWatchState = ref.watch(freeToWatchProvider);
-    final discoverState = ref.watch(discoverProvider);
     final upcomingState = ref.watch(upcomingProvider);
 
     return Scaffold(
       backgroundColor: AppColors.darkBackground,
       appBar: AppBar(
-        title: Text(
-          AppConstants.appName,
-          style: AppTextStyles.headline4,
-        ),
+        title: const AppLogo(height: 32),
               actions: [
                 IconButton(
                   icon: const Icon(Icons.search),
@@ -126,6 +120,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           await ref.read(trendingMoviesProvider.notifier).refresh();
           await ref.read(popularMoviesProvider.notifier).refresh();
           await ref.read(topRatedProvider.notifier).refresh();
+          await ref.read(trailersAggProvider.notifier).load();
+          await ref.read(freeAggProvider.notifier).load();
+          await ref.read(upcomingProvider.notifier).refresh();
         },
         child: CustomScrollView(
           controller: _scrollController,
@@ -142,27 +139,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
 
             // Trending Carousel
-            if (trendingMoviesState.isLoading)
+            if (trendingAgg.isLoading)
               SliverToBoxAdapter(
                 child: SizedBox(
                   height: AppDimensions.carouselHeight,
                   child: const LoadingIndicator(),
                 ),
               )
-            else if (trendingMoviesState.error != null)
+            else if (trendingAgg.error != null)
               SliverToBoxAdapter(
                 child: SizedBox(
                   height: AppDimensions.carouselHeight,
                   child: AppErrorWidget(
                     message: 'Failed to load trending movies',
-                    onRetry: () => ref.read(trendingMoviesProvider.notifier).refresh(),
+                    onRetry: () =>
+                        ref.read(trendingAggProvider.notifier).load(),
                   ),
                 ),
               )
             else
               SliverToBoxAdapter(
                 child: TrendingCarousel(
-                  movies: trendingMoviesState.items,
+                  movies: trendingAgg.items.toList(),
+                  seeMore: false,
+                  limit: trendingAgg.items.length >= 20
+                      ? 20
+                      : trendingAgg.items.length,
                   onMovieTap: (movie) {
                     Navigator.push(
                       context,
@@ -176,7 +178,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
             SliverToBoxAdapter(child: SizedBox(height: AppDimensions.space24)),
             
-            // Banner Ad
+            // Top Banner Ad
             const SliverToBoxAdapter(
               child: AdBannerWidget(),
             ),
@@ -186,19 +188,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             // Popular Section Header
             SliverToBoxAdapter(
               child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: AppDimensions.space16),
+                padding:
+                    EdgeInsets.symmetric(horizontal: AppDimensions.space16),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Popular Wallpapers', style: AppTextStyles.sectionTitle),
+                    Text('Popular Wallpapers',
+                        style: AppTextStyles.sectionTitle),
                     TextButton(
                       onPressed: () {
                         // Navigate to Search with popularity sort
                         ref.read(searchQueryProvider.notifier).state = '';
-                        ref.read(sortByProvider.notifier).state = 'popularity.desc';
+                        ref.read(sortByProvider.notifier).state =
+                            'popularity.desc';
                         Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (_) => const SearchScreen()),
+                          MaterialPageRoute(
+                              builder: (_) => const SearchScreen()),
                         );
                       },
                       child: const Text('See more'),
@@ -207,13 +213,67 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
               ),
             ),
+            // Top Popular Horizontal List
+            if (popularAgg.items.isEmpty && popularAgg.isLoading)
+              const SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 220,
+                  child: Center(child: LoadingIndicator()),
+                ),
+              )
+            else if (popularAgg.items.isEmpty && popularAgg.error != null)
+              SliverToBoxAdapter(
+                child: AppErrorWidget(
+                  message: popularAgg.error!,
+                  onRetry: () =>
+                      ref.read(popularAggProvider.notifier).loadInitial(),
+                ),
+              )
+            else
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 240,
+                  child: ListView.separated(
+                    padding:
+                        EdgeInsets.symmetric(horizontal: AppDimensions.space16),
+                    scrollDirection: Axis.horizontal,
+                    itemCount: popularAgg.items.length,
+                    separatorBuilder: (_, __) =>
+                        SizedBox(width: AppDimensions.space12),
+                    itemBuilder: (context, index) {
+                      final movie = popularAgg.items[index];
+                      return HorizontalMovieCard(
+                        movie: movie,
+                        typeBadge: 'Popular',
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  MovieDetailScreen(movie: movie),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ),
 
+            SliverToBoxAdapter(child: SizedBox(height: AppDimensions.space12)),
+
+            // Middle Banner Ad
+            const SliverToBoxAdapter(
+              child: AdBannerWidget(),
+            ),
+            
             SliverToBoxAdapter(child: SizedBox(height: AppDimensions.space12)),
 
             // Top Rated Section Header
             SliverToBoxAdapter(
               child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: AppDimensions.space16),
+                padding:
+                    EdgeInsets.symmetric(horizontal: AppDimensions.space16),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -221,10 +281,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     TextButton(
                       onPressed: () {
                         ref.read(searchQueryProvider.notifier).state = '';
-                        ref.read(sortByProvider.notifier).state = 'vote_average.desc';
+                        ref.read(sortByProvider.notifier).state =
+                            'vote_average.desc';
                         Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (_) => const SearchScreen()),
+                          MaterialPageRoute(
+                              builder: (_) => const SearchScreen()),
                         );
                       },
                       child: const Text('See more'),
@@ -248,7 +310,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               SliverToBoxAdapter(
                 child: AppErrorWidget(
                   message: topRatedState.error!,
-                  onRetry: () => ref.read(topRatedProvider.notifier).loadInitial(),
+                  onRetry: () =>
+                      ref.read(topRatedProvider.notifier).loadInitial(),
                 ),
               )
             else
@@ -256,33 +319,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 child: SizedBox(
                   height: 240,
                   child: ListView.separated(
-                    padding: EdgeInsets.symmetric(horizontal: AppDimensions.space16),
+                    padding:
+                        EdgeInsets.symmetric(horizontal: AppDimensions.space16),
                     scrollDirection: Axis.horizontal,
                     itemCount: topRatedState.items.length,
-                    separatorBuilder: (_, __) => SizedBox(width: AppDimensions.space12),
+                    separatorBuilder: (_, __) =>
+                        SizedBox(width: AppDimensions.space12),
                     itemBuilder: (context, index) {
                       final movie = topRatedState.items[index];
-                      return GestureDetector(
+                      return HorizontalMovieCard(
+                        movie: movie,
+                        typeBadge: 'Top Rated',
                         onTap: () {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) => MovieDetailScreen(movie: movie),
+                              builder: (context) =>
+                                  MovieDetailScreen(movie: movie),
                             ),
                           );
                         },
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(AppDimensions.radiusMedium),
-                          child: SizedBox(
-                            width: 140,
-                            child: movie.hasPoster
-                                ? CachedImageWidget(
-                                    imageUrl: TMDBEndpoints.posterUrl(movie.posterPath!, size: PosterSize.w500),
-                                    fit: BoxFit.cover,
-                                  )
-                                : Container(color: AppColors.darkCard),
-                          ),
-                        ),
                       );
                     },
                   ),
@@ -294,7 +350,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             // Trailers Section Header
             SliverToBoxAdapter(
               child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: AppDimensions.space16),
+                padding:
+                    EdgeInsets.symmetric(horizontal: AppDimensions.space16),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -303,10 +360,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       onPressed: () {
                         ref.read(searchQueryProvider.notifier).state = '';
                         // Use popularity for trailers discover as proxy
-                        ref.read(sortByProvider.notifier).state = 'popularity.desc';
+                        ref.read(sortByProvider.notifier).state =
+                            'popularity.desc';
                         Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (_) => const SearchScreen()),
+                          MaterialPageRoute(
+                              builder: (_) => const SearchScreen()),
                         );
                       },
                       child: const Text('See more'),
@@ -319,18 +378,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             SliverToBoxAdapter(child: SizedBox(height: AppDimensions.space12)),
 
             // Trailers Horizontal List
-            if (trailersState.items.isEmpty && trailersState.isLoading)
-              SliverToBoxAdapter(
+            if (trailersAgg.items.isEmpty && trailersAgg.isLoading)
+              const SliverToBoxAdapter(
                 child: SizedBox(
                   height: 240,
                   child: Center(child: LoadingIndicator()),
                 ),
               )
-            else if (trailersState.items.isEmpty && trailersState.error != null)
+            else if (trailersAgg.items.isEmpty && trailersAgg.error != null)
               SliverToBoxAdapter(
                 child: AppErrorWidget(
-                  message: trailersState.error!,
-                  onRetry: () => ref.read(trailersProvider.notifier).loadTrailers(),
+                  message: trailersAgg.error!,
+                  onRetry: () => ref.read(trailersAggProvider.notifier).load(),
                 ),
               )
             else
@@ -338,33 +397,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 child: SizedBox(
                   height: 240,
                   child: ListView.separated(
-                    padding: EdgeInsets.symmetric(horizontal: AppDimensions.space16),
+                    padding:
+                        EdgeInsets.symmetric(horizontal: AppDimensions.space16),
                     scrollDirection: Axis.horizontal,
-                    itemCount: trailersState.items.length,
-                    separatorBuilder: (_, __) => SizedBox(width: AppDimensions.space12),
+                    itemCount: trailersAgg.items.length >= 5
+                        ? 5
+                        : trailersAgg.items.length,
+                    separatorBuilder: (_, __) =>
+                        SizedBox(width: AppDimensions.space12),
                     itemBuilder: (context, index) {
-                      final movie = trailersState.items[index];
-                      return GestureDetector(
+                      final movie = trailersAgg.items[index];
+                      return HorizontalMovieCard(
+                        movie: movie,
+                        typeBadge: 'Trailer',
                         onTap: () {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) => MovieDetailScreen(movie: movie),
+                              builder: (context) =>
+                                  MovieDetailScreen(movie: movie),
                             ),
                           );
                         },
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(AppDimensions.radiusMedium),
-                          child: SizedBox(
-                            width: 140,
-                            child: movie.hasPoster
-                                ? CachedImageWidget(
-                                    imageUrl: TMDBEndpoints.posterUrl(movie.posterPath!, size: PosterSize.w500),
-                                    fit: BoxFit.cover,
-                                  )
-                                : Container(color: AppColors.darkCard),
-                          ),
-                        ),
                       );
                     },
                   ),
@@ -374,20 +428,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             SliverToBoxAdapter(child: SizedBox(height: AppDimensions.space24)),
 
             // Free To Watch Section Header
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: AppDimensions.space16),
+              SliverToBoxAdapter(
+                child: Padding(
+                padding:
+                    EdgeInsets.symmetric(horizontal: AppDimensions.space16),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text('Free to Watch', style: AppTextStyles.sectionTitle),
                     TextButton(
                       onPressed: () {
-                        ref.read(searchQueryProvider.notifier).state = '';
+                        ref.read(searchQueryProvider.notifier).state =
+                            'release_date.desc';
                         // Default discover without region/date filters
                         Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (_) => const SearchScreen()),
+                          MaterialPageRoute(
+                              builder: (_) => const SearchScreen()),
                         );
                       },
                       child: const Text('See more'),
@@ -400,18 +457,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             SliverToBoxAdapter(child: SizedBox(height: AppDimensions.space12)),
 
             // Free To Watch Horizontal List
-            if (freeToWatchState.items.isEmpty && freeToWatchState.isLoading)
-              SliverToBoxAdapter(
+            if (freeAgg.items.isEmpty && freeAgg.isLoading)
+              const SliverToBoxAdapter(
                 child: SizedBox(
                   height: 240,
                   child: Center(child: LoadingIndicator()),
                 ),
               )
-            else if (freeToWatchState.items.isEmpty && freeToWatchState.error != null)
+            else if (freeAgg.items.isEmpty && freeAgg.error != null)
               SliverToBoxAdapter(
                 child: AppErrorWidget(
-                  message: freeToWatchState.error!,
-                  onRetry: () => ref.read(freeToWatchProvider.notifier).loadFreeToWatch(),
+                  message: freeAgg.error!,
+                  onRetry: () => ref.read(freeAggProvider.notifier).load(),
                 ),
               )
             else
@@ -419,218 +476,120 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 child: SizedBox(
                   height: 240,
                   child: ListView.separated(
-                    padding: EdgeInsets.symmetric(horizontal: AppDimensions.space16),
+                    padding:
+                        EdgeInsets.symmetric(horizontal: AppDimensions.space16),
                     scrollDirection: Axis.horizontal,
-                    itemCount: freeToWatchState.items.length,
-                    separatorBuilder: (_, __) => SizedBox(width: AppDimensions.space12),
+                    itemCount:
+                        freeAgg.items.length >= 5 ? 5 : freeAgg.items.length,
+                    separatorBuilder: (_, __) =>
+                        SizedBox(width: AppDimensions.space12),
                     itemBuilder: (context, index) {
-                      final movie = freeToWatchState.items[index];
-                      return GestureDetector(
+                      final movie = freeAgg.items[index];
+                      return HorizontalMovieCard(
+                        movie: movie,
+                        typeBadge: 'Free',
                         onTap: () {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) => MovieDetailScreen(movie: movie),
+                              builder: (context) =>
+                                  MovieDetailScreen(movie: movie),
                             ),
                           );
                         },
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(AppDimensions.radiusMedium),
-                          child: SizedBox(
-                            width: 140,
-                            child: movie.hasPoster
-                                ? CachedImageWidget(
-                                    imageUrl: TMDBEndpoints.posterUrl(movie.posterPath!, size: PosterSize.w500),
-                                    fit: BoxFit.cover,
-                                  )
-                                : Container(color: AppColors.darkCard),
-                          ),
-                        ),
                       );
                     },
                   ),
                 ),
               ),
 
-            // Popular Movies Grid
-            if (popularMoviesState.items.isEmpty && popularMoviesState.isLoading)
-              SliverPadding(
-                padding: EdgeInsets.symmetric(horizontal: AppDimensions.space16),
-                sliver: SliverToBoxAdapter(
-                  child: GridShimmerLoading(
-                    itemCount: 6,
-                    aspectRatio: AppDimensions.posterAspectRatio,
-                  ),
+            SliverToBoxAdapter(child: SizedBox(height: AppDimensions.space24)),
+
+            // Bottom Banner Ad
+            const SliverToBoxAdapter(
+              child: AdBannerWidget(),
+            ),
+            
+            SliverToBoxAdapter(child: SizedBox(height: AppDimensions.space16)),
+
+            // New Releases Section Header
+            SliverToBoxAdapter(
+              child: Padding(
+                padding:
+                    EdgeInsets.symmetric(horizontal: AppDimensions.space16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('New Releases', style: AppTextStyles.sectionTitle),
+                    TextButton(
+                      onPressed: () {
+                        ref.read(searchQueryProvider.notifier).state = '';
+                        // Default discover without region/date filters
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const SearchScreen()),
+                        );
+                      },
+                      child: const Text('See more'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            SliverToBoxAdapter(child: SizedBox(height: AppDimensions.space12)),
+
+            // New Releases Horizontal List
+            if (upcomingState.items.isEmpty && upcomingState.isLoading)
+              const SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 240,
+                  child: Center(child: LoadingIndicator()),
                 ),
               )
-            else if (popularMoviesState.items.isEmpty && popularMoviesState.error != null)
+            else if (upcomingState.items.isEmpty && upcomingState.error != null)
               SliverToBoxAdapter(
                 child: AppErrorWidget(
-                  message: popularMoviesState.error!,
-                  onRetry: () => ref.read(popularMoviesProvider.notifier).loadInitial(),
+                  message: upcomingState.error!,
+                  onRetry: () => ref.read(upcomingProvider.notifier).refresh(),
                 ),
               )
             else
-              SliverPadding(
-                padding: EdgeInsets.all(AppDimensions.space16),
-                sliver: SliverGrid(
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    mainAxisSpacing: AppDimensions.gridSpacing,
-                    crossAxisSpacing: AppDimensions.gridSpacing,
-                    childAspectRatio: AppDimensions.posterAspectRatio,
-                  ),
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final movie = popularMoviesState.items[index];
-                      return WallpaperGridItem(
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 240,
+                  child: ListView.separated(
+                    padding:
+                        EdgeInsets.symmetric(horizontal: AppDimensions.space16),
+                    scrollDirection: Axis.horizontal,
+                    itemCount: upcomingState.items.length >= 5
+                        ? 5
+                        : upcomingState.items.length,
+                    separatorBuilder: (_, __) =>
+                        SizedBox(width: AppDimensions.space12),
+                    itemBuilder: (context, index) {
+                      final movie = upcomingState.items[index];
+                      return HorizontalMovieCard(
                         movie: movie,
+                        typeBadge: 'Upcoming',
                         onTap: () {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) => MovieDetailScreen(movie: movie),
+                              builder: (context) =>
+                                  MovieDetailScreen(movie: movie),
                             ),
                           );
                         },
                       );
                     },
-                    childCount: popularMoviesState.items.length,
                   ),
                 ),
               ),
-
-            // Loading indicator for pagination
-            if (popularMoviesState.isLoading && popularMoviesState.items.isNotEmpty)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.all(AppDimensions.space16),
-                  child: const LoadingIndicator(size: 32),
-                ),
-              ),
-
-            SliverToBoxAdapter(child: SizedBox(height: AppDimensions.space24)),
-            // Trailers Section
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.all(AppDimensions.space16),
-                child: Text(
-                  'Latest Trailers',
-                  style: AppTextStyles.sectionTitle,
-                ),
-              ),
-            ),
-            if (trailersState.isLoading)
-              SliverToBoxAdapter(child: SizedBox(height: 220, child: Center(child: LoadingIndicator())))
-            else if (trailersState.error != null)
-              SliverToBoxAdapter(child: AppErrorWidget(message: trailersState.error!, onRetry: () => ref.read(trailersProvider.notifier).loadTrailers()))
-            else
-              SliverToBoxAdapter(
-                child: TrendingCarousel(
-                  movies: trailersState.items,
-                ),
-              ),
-            SliverToBoxAdapter(child: SizedBox(height: AppDimensions.space24)),
-            // Free to Watch Section
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: AppDimensions.space16),
-                child: Text('Free to Watch', style: AppTextStyles.sectionTitle),
-              ),
-            ),
-            if (freeToWatchState.isLoading)
-              SliverToBoxAdapter(child: SizedBox(height: 220, child: Center(child: LoadingIndicator())))
-            else if (freeToWatchState.error != null)
-              SliverToBoxAdapter(child: AppErrorWidget(message: freeToWatchState.error!, onRetry: () => ref.read(freeToWatchProvider.notifier).loadFreeToWatch()))
-            else
-              SliverPadding(
-                padding: EdgeInsets.all(AppDimensions.space16),
-                sliver: SliverGrid(
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    mainAxisSpacing: AppDimensions.gridSpacing,
-                    crossAxisSpacing: AppDimensions.gridSpacing,
-                    childAspectRatio: AppDimensions.posterAspectRatio,
-                  ),
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) => WallpaperGridItem(movie: freeToWatchState.items[index]),
-                    childCount: freeToWatchState.items.length,
-                  ),
-                ),
-              ),
-            SliverToBoxAdapter(child: SizedBox(height: AppDimensions.space24)),
-            // Discover Section
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: AppDimensions.space16),
-                child: Text('Discover', style: AppTextStyles.sectionTitle),
-              ),
-            ),
-            if (discoverState.isLoading && discoverState.items.isEmpty)
-              SliverToBoxAdapter(child: SizedBox(height: 220, child: Center(child: LoadingIndicator())))
-            else if (discoverState.error != null && discoverState.items.isEmpty)
-              SliverToBoxAdapter(child: AppErrorWidget(message: discoverState.error!, onRetry: () => ref.read(discoverProvider.notifier).loadInitial()))
-            else
-              SliverPadding(
-                padding: EdgeInsets.all(AppDimensions.space16),
-                sliver: SliverGrid(
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    mainAxisSpacing: AppDimensions.gridSpacing,
-                    crossAxisSpacing: AppDimensions.gridSpacing,
-                    childAspectRatio: AppDimensions.posterAspectRatio,
-                  ),
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) => WallpaperGridItem(movie: discoverState.items[index]),
-                    childCount: discoverState.items.length,
-                  ),
-                ),
-              ),
-            // Show loading at bottom for infinite scroll
-            if (discoverState.isLoading && discoverState.items.isNotEmpty)
-              SliverToBoxAdapter(child: Padding(
-                padding: EdgeInsets.all(AppDimensions.space16),
-                child: LoadingIndicator(size: 32),
-              )),
-            SliverToBoxAdapter(child: SizedBox(height: AppDimensions.space24)),
-            // Upcoming Section
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: AppDimensions.space16),
-                child: Text('Upcoming', style: AppTextStyles.sectionTitle),
-              ),
-            ),
-            if (upcomingState.isLoading && upcomingState.items.isEmpty)
-              SliverToBoxAdapter(child: SizedBox(height: 220, child: Center(child: LoadingIndicator())))
-            else if (upcomingState.error != null && upcomingState.items.isEmpty)
-              SliverToBoxAdapter(child: AppErrorWidget(message: upcomingState.error!, onRetry: () => ref.read(upcomingProvider.notifier).loadInitial()))
-            else
-              SliverPadding(
-                padding: EdgeInsets.all(AppDimensions.space16),
-                sliver: SliverGrid(
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    mainAxisSpacing: AppDimensions.gridSpacing,
-                    crossAxisSpacing: AppDimensions.gridSpacing,
-                    childAspectRatio: AppDimensions.posterAspectRatio,
-                  ),
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) => WallpaperGridItem(movie: upcomingState.items[index]),
-                    childCount: upcomingState.items.length,
-                  ),
-                ),
-              ),
-            // Show loading at bottom for upcoming
-            if (upcomingState.isLoading && upcomingState.items.isNotEmpty)
-              SliverToBoxAdapter(child: Padding(
-                padding: EdgeInsets.all(AppDimensions.space16),
-                child: LoadingIndicator(size: 32),
-              )),
-            SliverToBoxAdapter(child: SizedBox(height: AppDimensions.space32)),
           ],
         ),
       ),
     );
   }
 }
-

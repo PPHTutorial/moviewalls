@@ -7,20 +7,31 @@ import 'ad_config.dart';
 class AdService {
   static AdService? _instance;
   
-  BannerAd? _bannerAd;
+  // Note: Banner ads are created per widget, not stored here
   InterstitialAd? _interstitialAd;
   RewardedAd? _rewardedAd;
+  RewardedInterstitialAd? _rewardedInterstitialAd;
   
   bool _isInterstitialReady = false;
   bool _isRewardedReady = false;
+  bool _isRewardedInterstitialReady = false;
   int _downloadsSinceLastAd = 0;
   DateTime? _lastInterstitialTime;
+  // Navigation and time-based tracking
+  int _navigationCount = 0;
+  DateTime? _lastNavigationAdTime;
   
   // Retry tracking for ads
   int _interstitialRetryCount = 0;
   int _rewardedRetryCount = 0;
+  int _rewardedInterstitialRetryCount = 0;
   static const int _maxRetries = 5;
   static const int _initialRetryDelaySeconds = 30;
+  static const int _rateLimitBackoffSeconds = 60; // 1 minute for rate limit errors
+  
+  // Ad frequency settings (user-friendly - not too aggressive)
+  static const int _navigationsBeforeInterstitial = 3; // Show ad after 3 screen navigations
+  static const int _minutesBetweenTimeBasedAds = 5; // Show time-based ad every 5 minutes
   
   AdService._();
   
@@ -34,11 +45,12 @@ class AdService {
     try {
       print('🔍 [AD] Initializing AdMob...');
       
-      // Set test device IDs for testing
-      final configuration = RequestConfiguration(
-        testDeviceIds: ['FDB6404EE2DF76ABCA39527BDAFAB242'], // Your test device
+      // Configure test device for test ads
+      await MobileAds.instance.updateRequestConfiguration(
+        RequestConfiguration(
+          testDeviceIds: ['FDB6404EE2DF76ABCA39527BDAFAB242'],
+        ),
       );
-      MobileAds.instance.updateRequestConfiguration(configuration);
       print('✅ [AD] Set test device configuration');
       
       await MobileAds.instance.initialize();
@@ -51,6 +63,8 @@ class AdService {
         _loadInterstitialAd();
         print('🔍 [AD] Loading rewarded ad...');
         _loadRewardedAd();
+        print('🔍 [AD] Loading rewarded interstitial ad...');
+        _loadRewardedInterstitialAd();
       });
     } catch (e, stackTrace) {
       print('❌ [AD] Error initializing AdMob: $e');
@@ -58,12 +72,12 @@ class AdService {
     }
   }
   
-  /// Load banner ad
-  BannerAd? loadBannerAd({
+  /// Load banner ad (creates new instance each time for multiple banners)
+  BannerAd loadBannerAd({
     required Function(Ad ad) onAdLoaded,
     required Function(Ad ad, LoadAdError error) onAdFailedToLoad,
   }) {
-    _bannerAd = BannerAd(
+    final bannerAd = BannerAd(
       adUnitId: AdConfig.getBannerAdUnitId(),
       size: AdSize.banner,
       request: const AdRequest(),
@@ -73,15 +87,20 @@ class AdService {
           onAdLoaded(ad);
         },
         onAdFailedToLoad: (ad, error) {
-          AppLogger.e('Banner ad failed to load: ${error.message}');
+          // Code 3 is "No fill" - normal occurrence, not an error
+          if (error.code == 3) {
+            AppLogger.d('Banner ad: No fill (no ad available)');
+          } else {
+            AppLogger.e('Banner ad failed to load: ${error.message}', error);
+          }
           ad.dispose();
           onAdFailedToLoad(ad, error);
         },
       ),
     );
     
-    _bannerAd!.load();
-    return _bannerAd;
+    bannerAd.load();
+    return bannerAd;
   }
   
   /// Load interstitial ad
@@ -117,15 +136,35 @@ class AdService {
           );
         },
         onAdFailedToLoad: (error) {
+          // Code 3 is "No fill" - normal occurrence, don't log as error or retry aggressively
+          if (error.code == 3) {
+            AppLogger.d('Interstitial ad: No fill (no ad available)');
+            // Still retry but with longer delay for "No fill"
+            if (_interstitialRetryCount < _maxRetries) {
+              _interstitialRetryCount++;
+              final delaySeconds = _initialRetryDelaySeconds * (1 << (_interstitialRetryCount - 1));
+              Future.delayed(Duration(seconds: delaySeconds), () {
+                if (_interstitialRetryCount <= _maxRetries) {
+                  _loadInterstitialAd();
+                }
+              });
+            }
+          } else {
+            // Check for rate limit error first
+            final isRateLimited = error.message.toLowerCase().contains('too many recently failed requests') ||
+                                 error.message.toLowerCase().contains('must wait');
+            
+            if (isRateLimited) {
+              // Rate limit - wait much longer (10 minutes) before retrying
+              AppLogger.w('Interstitial ad rate limited - waiting ${_rateLimitBackoffSeconds}s before retry');
+              print('⚠️ [AD] Rate limit detected for interstitial ad - waiting ${_rateLimitBackoffSeconds}s');
+              Future.delayed(Duration(seconds: _rateLimitBackoffSeconds), () {
+                _interstitialRetryCount = 0; // Reset counter after rate limit wait
+                _loadInterstitialAd();
+              });
+            } else {
           print('❌ [AD] Interstitial ad failed to load: ${error.message}, Code: ${error.code}, Domain: ${error.domain}');
-          AppLogger.e('Interstitial ad failed to load: ${error.message}');
-          _isInterstitialReady = false;
-          
-          // Check for "too many failed requests" error
-          if (error.message.toLowerCase().contains('too many recently failed requests')) {
-            print('⚠️ [AD] Too many failed requests - backing off significantly');
-            _interstitialRetryCount = _maxRetries; // Treat as max retries reached
-          }
+              AppLogger.e('Interstitial ad failed to load: ${error.message}', error);
           
           // Only retry if under max retries
           if (_interstitialRetryCount < _maxRetries) {
@@ -142,6 +181,9 @@ class AdService {
           } else {
             print('⚠️ [AD] Max retries reached for interstitial ad. Stopping retries.');
           }
+            }
+          }
+          _isInterstitialReady = false;
         },
       ),
     );
@@ -180,16 +222,36 @@ class AdService {
           );
         },
         onAdFailedToLoad: (error) {
+          // Code 3 is "No fill" - normal occurrence, don't log as error or retry aggressively
+          if (error.code == 3) {
+            AppLogger.d('Rewarded ad: No fill (no ad available)');
+            // Still retry but with longer delay for "No fill"
+            if (_rewardedRetryCount < _maxRetries) {
+              _rewardedRetryCount++;
+              final delaySeconds = _initialRetryDelaySeconds * (1 << (_rewardedRetryCount - 1));
+              Future.delayed(Duration(seconds: delaySeconds), () {
+                if (_rewardedRetryCount <= _maxRetries) {
+                  _loadRewardedAd();
+                }
+              });
+            }
+          } else {
           print('❌ [AD] Rewarded ad failed to load: ${error.message}, Code: ${error.code}, Domain: ${error.domain}');
-          AppLogger.e('Rewarded ad failed to load: ${error.message}');
-          _isRewardedReady = false;
-          
-          // Check for "too many failed requests" error
-          if (error.message.toLowerCase().contains('too many recently failed requests')) {
-            print('⚠️ [AD] Too many failed requests - backing off significantly');
-            _rewardedRetryCount = _maxRetries; // Treat as max retries reached
-          }
-          
+            AppLogger.e('Rewarded ad failed to load: ${error.message}', error);
+            
+            // Check for rate limit error first
+            final isRateLimited = error.message.toLowerCase().contains('too many recently failed requests') ||
+                                 error.message.toLowerCase().contains('must wait');
+            
+            if (isRateLimited) {
+              // Rate limit - wait much longer (10 minutes) before retrying
+              AppLogger.w('Rewarded ad rate limited - waiting ${_rateLimitBackoffSeconds}s before retry');
+              print('⚠️ [AD] Rate limit detected for rewarded ad - waiting ${_rateLimitBackoffSeconds}s');
+              Future.delayed(Duration(seconds: _rateLimitBackoffSeconds), () {
+                _rewardedRetryCount = 0; // Reset counter after rate limit wait
+                _loadRewardedAd();
+              });
+            } else {
           // Only retry if under max retries
           if (_rewardedRetryCount < _maxRetries) {
             _rewardedRetryCount++;
@@ -205,6 +267,9 @@ class AdService {
           } else {
             print('⚠️ [AD] Max retries reached for rewarded ad. Stopping retries.');
           }
+            }
+          }
+          _isRewardedReady = false;
         },
       ),
     );
@@ -264,6 +329,7 @@ class AdService {
       );
       
       _isRewardedReady = false;
+      _loadRewardedAd(); // Reload for next time
       return rewardEarned;
     } else {
       AppLogger.w('Rewarded ad not ready');
@@ -272,31 +338,172 @@ class AdService {
     }
   }
   
-  /// Dispose banner ad
-  void disposeBannerAd() {
-    _bannerAd?.dispose();
-    _bannerAd = null;
+  /// Load rewarded interstitial ad
+  void _loadRewardedInterstitialAd() {
+    final adUnitId = AdConfig.getRewardedInterstitialAdUnitId();
+    print('🔍 [AD] Loading rewarded interstitial ad with unit ID: $adUnitId');
+    
+    RewardedInterstitialAd.load(
+      adUnitId: adUnitId,
+      request: const AdRequest(),
+      rewardedInterstitialAdLoadCallback: RewardedInterstitialAdLoadCallback(
+        onAdLoaded: (ad) {
+          print('✅ [AD] Rewarded interstitial ad loaded successfully');
+          _rewardedInterstitialAd = ad;
+          _isRewardedInterstitialReady = true;
+          _rewardedInterstitialRetryCount = 0;
+          AppLogger.i('Rewarded interstitial ad loaded');
+          
+          ad.fullScreenContentCallback = FullScreenContentCallback(
+            onAdDismissedFullScreenContent: (ad) {
+              print('🔍 [AD] Rewarded interstitial ad dismissed');
+              ad.dispose();
+              _isRewardedInterstitialReady = false;
+              _loadRewardedInterstitialAd(); // Reload for next time
+            },
+            onAdFailedToShowFullScreenContent: (ad, error) {
+              print('❌ [AD] Rewarded interstitial ad failed to show: ${error.message}');
+              AppLogger.e('Rewarded interstitial ad failed to show: ${error.message}');
+              ad.dispose();
+              _isRewardedInterstitialReady = false;
+              _loadRewardedInterstitialAd();
+            },
+          );
+        },
+        onAdFailedToLoad: (error) {
+          if (error.code == 3) {
+            AppLogger.d('Rewarded interstitial ad: No fill');
+            if (_rewardedInterstitialRetryCount < _maxRetries) {
+              _rewardedInterstitialRetryCount++;
+              final delaySeconds = _initialRetryDelaySeconds * (1 << (_rewardedInterstitialRetryCount - 1));
+              Future.delayed(Duration(seconds: delaySeconds), () {
+                if (_rewardedInterstitialRetryCount <= _maxRetries) {
+                  _loadRewardedInterstitialAd();
+                }
+              });
+            }
+          } else {
+            print('❌ [AD] Rewarded interstitial ad failed to load: ${error.message}');
+            AppLogger.e('Rewarded interstitial ad failed to load: ${error.message}', error);
+            
+            final isRateLimited = error.message.toLowerCase().contains('too many recently failed requests');
+            if (isRateLimited) {
+              AppLogger.w('Rewarded interstitial ad rate limited - waiting ${_rateLimitBackoffSeconds}s');
+              Future.delayed(Duration(seconds: _rateLimitBackoffSeconds), () {
+                _rewardedInterstitialRetryCount = 0;
+                _loadRewardedInterstitialAd();
+              });
+            } else if (_rewardedInterstitialRetryCount < _maxRetries) {
+              _rewardedInterstitialRetryCount++;
+              final delaySeconds = _initialRetryDelaySeconds * (1 << (_rewardedInterstitialRetryCount - 1));
+              Future.delayed(Duration(seconds: delaySeconds), () {
+                if (_rewardedInterstitialRetryCount <= _maxRetries) {
+                  _loadRewardedInterstitialAd();
+                }
+              });
+            }
+          }
+          _isRewardedInterstitialReady = false;
+        },
+      ),
+    );
+  }
+
+  /// Show rewarded interstitial ad
+  Future<bool> showRewardedInterstitialAd({
+    required Function() onRewardEarned,
+  }) async {
+    if (_isRewardedInterstitialReady && _rewardedInterstitialAd != null) {
+      bool rewardEarned = false;
+      
+      await _rewardedInterstitialAd!.show(
+        onUserEarnedReward: (ad, reward) {
+          AppLogger.i('User earned reward from rewarded interstitial: ${reward.amount} ${reward.type}');
+          rewardEarned = true;
+          onRewardEarned();
+        },
+      );
+      
+      _isRewardedInterstitialReady = false;
+      _loadRewardedInterstitialAd(); // Reload for next time
+      return rewardEarned;
+    } else {
+      AppLogger.w('Rewarded interstitial ad not ready');
+      _loadRewardedInterstitialAd(); // Try to load for next time
+      return false;
+    }
+  }
+
+  /// Track navigation and show ad if needed
+  Future<void> onNavigation() async {
+    _navigationCount++;
+    
+    // Check if we should show ad based on navigation count
+    if (_navigationCount >= _navigationsBeforeInterstitial) {
+      // Also check time-based frequency cap
+      if (_lastNavigationAdTime == null || 
+          DateTime.now().difference(_lastNavigationAdTime!) >= Duration(minutes: _minutesBetweenTimeBasedAds)) {
+        await showInterstitialAdOnNavigation();
+        _navigationCount = 0;
+        _lastNavigationAdTime = DateTime.now();
+      }
+    }
+  }
+
+  /// Show interstitial ad on navigation (with frequency cap check)
+  Future<void> showInterstitialAdOnNavigation() async {
+    // Check frequency cap
+    if (_lastInterstitialTime != null) {
+      final timeSinceLastAd = DateTime.now().difference(_lastInterstitialTime!);
+      if (timeSinceLastAd.inMinutes < AppConstants.minutesBetweenInterstitials) {
+        AppLogger.i('Interstitial ad frequency cap - too soon since last ad');
+        return;
+      }
+    }
+    
+    await showInterstitialAd();
+  }
+
+  /// Check and show time-based interstitial ad (every X minutes)
+  Future<void> checkAndShowTimeBasedAd() async {
+    if (_lastInterstitialTime == null) {
+      _lastInterstitialTime = DateTime.now();
+      return;
+    }
+    
+    final timeSinceLastAd = DateTime.now().difference(_lastInterstitialTime!);
+    if (timeSinceLastAd.inMinutes >= _minutesBetweenTimeBasedAds) {
+      await showInterstitialAd();
+    }
   }
   
   /// Dispose all ads
   void disposeAll() {
-    _bannerAd?.dispose();
     _interstitialAd?.dispose();
     _rewardedAd?.dispose();
+    _rewardedInterstitialAd?.dispose();
     
-    _bannerAd = null;
     _interstitialAd = null;
     _rewardedAd = null;
+    _rewardedInterstitialAd = null;
     _isInterstitialReady = false;
     _isRewardedReady = false;
+    _isRewardedInterstitialReady = false;
     _interstitialRetryCount = 0;
     _rewardedRetryCount = 0;
+    _rewardedInterstitialRetryCount = 0;
   }
   
   /// Reset retry counts (useful for manual retry)
   void resetRetryCounts() {
     _interstitialRetryCount = 0;
     _rewardedRetryCount = 0;
+    _rewardedInterstitialRetryCount = 0;
+  }
+  
+  /// Reset navigation counter (useful when user becomes Pro)
+  void resetNavigationCounter() {
+    _navigationCount = 0;
   }
 }
 

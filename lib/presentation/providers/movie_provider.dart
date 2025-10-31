@@ -13,7 +13,7 @@ class PaginationState {
   final bool isLoading;
   final bool hasMoreData;
   final String? error;
-  
+
   const PaginationState({
     this.items = const [],
     this.currentPage = 1,
@@ -21,7 +21,7 @@ class PaginationState {
     this.hasMoreData = true,
     this.error,
   });
-  
+
   PaginationState copyWith({
     List<Movie>? items,
     int? currentPage,
@@ -40,7 +40,8 @@ class PaginationState {
 }
 
 // Real provider using ScrapingService
-final movieScraperProvider = Provider<MovieScraperSource>((ref) => MovieScraperSource());
+final movieScraperProvider =
+    Provider<MovieScraperSource>((ref) => MovieScraperSource());
 
 class MovieScraperSource {
   final _scraper = ScrapingService.instance;
@@ -48,7 +49,8 @@ class MovieScraperSource {
   /// 1. Trending (group: today | this-week)
   Future<List<Movie>> getTrending({String group = 'this-week'}) async {
     final key = 'trending_$group';
-    final url = 'https://www.themoviedb.org/remote/panel?panel=trending_scroller&group=$group';
+    final url =
+        'https://www.themoviedb.org/remote/panel?panel=trending_scroller&group=$group';
     final models = await _scraper.fetchAndCacheMoviesHtmlPaged(
       endpointKey: key,
       url: url,
@@ -61,9 +63,11 @@ class MovieScraperSource {
   }
 
   /// 2. Popular (groups: streaming, on-tv, for-rent, in-theatres)
-  Future<List<Movie>> getPopular({int page = 1, String group = 'streaming'}) async {
+  Future<List<Movie>> getPopular(
+      {int page = 1, String group = 'streaming'}) async {
     final key = 'popular_$group';
-    final url = 'https://www.themoviedb.org/remote/panel?panel=popular_scroller&group=$group';
+    final url =
+        'https://www.themoviedb.org/remote/panel?panel=popular_scroller&group=$group';
     final models = await _scraper.fetchAndCacheMoviesHtmlPaged(
       endpointKey: key,
       url: url,
@@ -78,7 +82,8 @@ class MovieScraperSource {
   /// 3. Trailers (groups: popular, streaming, on-tv)
   Future<List<Movie>> getTrailers({String group = 'popular'}) async {
     final key = 'trailers_$group';
-    final url = 'https://www.themoviedb.org/remote/panel?panel=trailer_scroller&group=$group';
+    final url =
+        'https://www.themoviedb.org/remote/panel?panel=trailer_scroller&group=$group';
     final models = await _scraper.fetchAndCacheMoviesHtmlPaged(
       endpointKey: key,
       url: url,
@@ -91,15 +96,17 @@ class MovieScraperSource {
   }
 
   /// 4. Free to Watch (group: movie | tv)
-  Future<List<Movie>> getFreeToWatch({String group = 'movie'}) async {
-    final key = 'free_$group';
-    final url = 'https://www.themoviedb.org/remote/panel?panel=free_scroller&group=$group';
+  Future<List<Movie>> getFreeToWatch({String group = 'tv'}) async {
+    final key = 'free_$group&sort_by=popularity.desc';
+    final url =
+        'https://www.themoviedb.org/remote/panel?panel=free_scroller&group=$group';
     final models = await _scraper.fetchAndCacheMoviesHtmlPaged(
       endpointKey: key,
       url: url,
       page: 1,
       extraHeaders: {'x-requested-with': 'XMLHttpRequest'},
       uniqueComposite: key,
+      post: false,
       forceNetwork: CachePolicyService.instance.consumeForceNetwork(),
     );
     return models.map((m) => m.toEntity()).toList();
@@ -110,7 +117,7 @@ class MovieScraperSource {
     int page = 1,
     String sortBy = 'popularity.desc',
     String? region,
-    String watchRegion = 'GH',
+    String watchRegion = '',
     String? releaseDateLte,
     String? releaseDateGte,
     Map<String, String>? customParams,
@@ -151,7 +158,9 @@ class MovieScraperSource {
       'with_runtime.lte': '400',
     };
     if (customParams != null) body.addAll(customParams);
-    final bodyStr = body.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&');
+    final bodyStr = body.entries
+        .map((e) => '${e.key}=${Uri.encodeComponent(e.value)}')
+        .join('&');
     final key = 'discover_${body['sort_by']}_${watchRegion}_page_${page}';
     final url = 'https://www.themoviedb.org/discover/movie';
     final models = await _scraper.fetchAndCacheMoviesHtmlPaged(
@@ -163,11 +172,11 @@ class MovieScraperSource {
         'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
       },
       body: bodyStr,
-      post: true,
+      post: false,
       uniqueComposite: key,
       forceNetwork: CachePolicyService.instance.consumeForceNetwork(),
     );
-    return models.map((m) => m.toEntity()).toList();
+    return models.map((m) => m.toEntity()).toList().sublist(3);
   }
 
   /// 6. Upcoming - release dates must be dynamic by current date
@@ -175,7 +184,7 @@ class MovieScraperSource {
     final DateFormat fmt = DateFormat('yyyy-MM-dd');
     final now = DateTime.now();
     final gte = fmt.format(now);
-    final lte = fmt.format(now.add(Duration(days: 27)));
+    final lte = fmt.format(now.add(Duration(days: 180)));
     final body = {
       'air_date.gte': '',
       'air_date.lte': '',
@@ -187,7 +196,7 @@ class MovieScraperSource {
       'page': page.toString(),
       'primary_release_date.gte': '',
       'primary_release_date.lte': '',
-      'region': watchRegion ?? '',
+      'region': '',
       'release_date.gte': gte,
       'release_date.lte': lte,
       'show_me': 'everything',
@@ -203,15 +212,17 @@ class MovieScraperSource {
       'with_original_language': '',
       'with_watch_monetization_types': '',
       'with_watch_providers': '',
-      'with_release_type': '3%7C1%7C4%7C5%7C6',
+      'with_release_type': '',
       'with_runtime.gte': '0',
       'with_runtime.lte': '400',
     };
-    final bodyStr = body.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&');
-    final key = 'upcoming_${watchRegion ?? 'GH'}_page_$page';
-    final url = 'https://www.themoviedb.org/discover/movie';
+    final bodyStr = body.entries
+        .map((e) => '${e.key}=${Uri.encodeComponent(e.value)}')
+        .join('&');
+    final key = 'release_date.gte=$gte&release_date.lte=$lte&show_me=everything&sort_by=popularity.desc';
+    final url = 'https://www.themoviedb.org/movie?${key}';
     final models = await _scraper.fetchAndCacheMoviesHtmlPaged(
-      endpointKey: key,
+      endpointKey: '',
       url: url,
       page: 1,
       extraHeaders: {
@@ -219,10 +230,11 @@ class MovieScraperSource {
         'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
       },
       body: bodyStr,
-      post: true,
-      uniqueComposite: key,
+      post: false,
+      uniqueComposite: '',
       forceNetwork: CachePolicyService.instance.consumeForceNetwork(),
     );
+    print('urls: ${url}');
     return models.map((m) => m.toEntity()).toList();
   }
 }
@@ -232,13 +244,13 @@ class TrendingMoviesState {
   final List<Movie> items;
   final bool isLoading;
   final String? error;
-  
+
   const TrendingMoviesState({
     this.items = const [],
     this.isLoading = false,
     this.error,
   });
-  
+
   TrendingMoviesState copyWith({
     List<Movie>? items,
     bool? isLoading,
@@ -253,7 +265,8 @@ class TrendingMoviesState {
 }
 
 /// Trending movies provider with StateNotifier
-final trendingMoviesProvider = StateNotifierProvider<TrendingMoviesNotifier, TrendingMoviesState>((ref) {
+final trendingMoviesProvider =
+    StateNotifierProvider<TrendingMoviesNotifier, TrendingMoviesState>((ref) {
   final scraper = ref.watch(movieScraperProvider);
   return TrendingMoviesNotifier(scraper);
 });
@@ -261,15 +274,15 @@ final trendingMoviesProvider = StateNotifierProvider<TrendingMoviesNotifier, Tre
 /// Trending movies notifier
 class TrendingMoviesNotifier extends StateNotifier<TrendingMoviesState> {
   final MovieScraperSource _scraper;
-  
+
   TrendingMoviesNotifier(this._scraper) : super(const TrendingMoviesState()) {
     loadTrending();
   }
-  
+
   /// Load trending movies
   Future<void> loadTrending() async {
     state = state.copyWith(isLoading: true, error: null);
-    
+
     try {
       final movies = await _scraper.getTrending();
       state = state.copyWith(
@@ -285,7 +298,7 @@ class TrendingMoviesNotifier extends StateNotifier<TrendingMoviesState> {
       );
     }
   }
-  
+
   /// Refresh trending movies
   Future<void> refresh() async {
     await loadTrending();
@@ -293,7 +306,8 @@ class TrendingMoviesNotifier extends StateNotifier<TrendingMoviesState> {
 }
 
 /// Popular movies with pagination provider
-final popularMoviesProvider = StateNotifierProvider<PopularMoviesNotifier, PaginationState>((ref) {
+final popularMoviesProvider =
+    StateNotifierProvider<PopularMoviesNotifier, PaginationState>((ref) {
   final scraper = ref.watch(movieScraperProvider);
   return PopularMoviesNotifier(scraper);
 });
@@ -301,17 +315,17 @@ final popularMoviesProvider = StateNotifierProvider<PopularMoviesNotifier, Pagin
 /// Popular movies notifier with pagination
 class PopularMoviesNotifier extends StateNotifier<PaginationState> {
   final MovieScraperSource _scraper;
-  
+
   PopularMoviesNotifier(this._scraper) : super(const PaginationState()) {
     loadInitial();
   }
-  
+
   /// Load initial data
   Future<void> loadInitial() async {
     if (state.isLoading) return;
-    
+
     state = state.copyWith(isLoading: true, error: null);
-    
+
     try {
       final movies = await _scraper.getPopular(page: 1);
       state = state.copyWith(
@@ -329,13 +343,13 @@ class PopularMoviesNotifier extends StateNotifier<PaginationState> {
       );
     }
   }
-  
+
   /// Load next page
   Future<void> loadNextPage() async {
     if (state.isLoading || !state.hasMoreData) return;
-    
+
     state = state.copyWith(isLoading: true);
-    
+
     try {
       final nextPage = state.currentPage + 1;
       final movies = await _scraper.getPopular(page: nextPage);
@@ -355,7 +369,7 @@ class PopularMoviesNotifier extends StateNotifier<PaginationState> {
       );
     }
   }
-  
+
   /// Refresh data
   Future<void> refresh() async {
     state = const PaginationState();
@@ -368,8 +382,10 @@ class TrailersState {
   final List<Movie> items;
   final bool isLoading;
   final String? error;
-  const TrailersState({this.items = const [], this.isLoading = false, this.error});
-  TrailersState copyWith({List<Movie>? items, bool? isLoading, String? error}) =>
+  const TrailersState(
+      {this.items = const [], this.isLoading = false, this.error});
+  TrailersState copyWith(
+          {List<Movie>? items, bool? isLoading, String? error}) =>
       TrailersState(
         items: items ?? this.items,
         isLoading: isLoading ?? this.isLoading,
@@ -377,7 +393,8 @@ class TrailersState {
       );
 }
 
-final trailersProvider = StateNotifierProvider.autoDispose<TrailersNotifier, TrailersState>((ref) {
+final trailersProvider =
+    StateNotifierProvider.autoDispose<TrailersNotifier, TrailersState>((ref) {
   final scraper = ref.watch(movieScraperProvider);
   return TrailersNotifier(scraper);
 });
@@ -403,8 +420,10 @@ class FreeToWatchState {
   final List<Movie> items;
   final bool isLoading;
   final String? error;
-  const FreeToWatchState({this.items = const [], this.isLoading = false, this.error});
-  FreeToWatchState copyWith({List<Movie>? items, bool? isLoading, String? error}) =>
+  const FreeToWatchState(
+      {this.items = const [], this.isLoading = false, this.error});
+  FreeToWatchState copyWith(
+          {List<Movie>? items, bool? isLoading, String? error}) =>
       FreeToWatchState(
         items: items ?? this.items,
         isLoading: isLoading ?? this.isLoading,
@@ -412,7 +431,9 @@ class FreeToWatchState {
       );
 }
 
-final freeToWatchProvider = StateNotifierProvider.autoDispose<FreeToWatchNotifier, FreeToWatchState>((ref) {
+final freeToWatchProvider =
+    StateNotifierProvider.autoDispose<FreeToWatchNotifier, FreeToWatchState>(
+        (ref) {
   final scraper = ref.watch(movieScraperProvider);
   return FreeToWatchNotifier(scraper);
 });
@@ -440,8 +461,18 @@ class DiscoverState {
   final bool isLoading;
   final bool hasMoreData;
   final String? error;
-  const DiscoverState({this.items = const [], this.currentPage = 1, this.isLoading = false, this.hasMoreData = true, this.error});
-  DiscoverState copyWith({List<Movie>? items, int? currentPage, bool? isLoading, bool? hasMoreData, String? error}) =>
+  const DiscoverState(
+      {this.items = const [],
+      this.currentPage = 1,
+      this.isLoading = false,
+      this.hasMoreData = true,
+      this.error});
+  DiscoverState copyWith(
+          {List<Movie>? items,
+          int? currentPage,
+          bool? isLoading,
+          bool? hasMoreData,
+          String? error}) =>
       DiscoverState(
         items: items ?? this.items,
         currentPage: currentPage ?? this.currentPage,
@@ -451,7 +482,8 @@ class DiscoverState {
       );
 }
 
-final discoverProvider = StateNotifierProvider.autoDispose<DiscoverNotifier, DiscoverState>((ref) {
+final discoverProvider =
+    StateNotifierProvider.autoDispose<DiscoverNotifier, DiscoverState>((ref) {
   final scraper = ref.watch(movieScraperProvider);
   return DiscoverNotifier(scraper);
 });
@@ -466,11 +498,17 @@ class DiscoverNotifier extends StateNotifier<DiscoverState> {
     state = state.copyWith(isLoading: true, error: null);
     try {
       final movies = await _scraper.getDiscover(page: 1);
-      state = state.copyWith(items: movies, currentPage: 1, isLoading: false, hasMoreData: movies.length >= 20, error: null);
+      state = state.copyWith(
+          items: movies,
+          currentPage: 1,
+          isLoading: false,
+          hasMoreData: movies.length >= 20,
+          error: null);
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
     }
   }
+
   Future<void> loadNextPage() async {
     if (state.isLoading || !state.hasMoreData) return;
     state = state.copyWith(isLoading: true);
@@ -478,11 +516,17 @@ class DiscoverNotifier extends StateNotifier<DiscoverState> {
       final nextPage = state.currentPage + 1;
       final movies = await _scraper.getDiscover(page: nextPage);
       final updatedItems = [...state.items, ...movies];
-      state = state.copyWith(items: updatedItems, currentPage: nextPage, isLoading: false, hasMoreData: movies.length >= 20, error: null);
+      state = state.copyWith(
+          items: updatedItems,
+          currentPage: nextPage,
+          isLoading: false,
+          hasMoreData: movies.length >= 20,
+          error: null);
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
     }
   }
+
   Future<void> refresh() async {
     state = const DiscoverState();
     await loadInitial();
@@ -496,8 +540,18 @@ class UpcomingState {
   final bool isLoading;
   final bool hasMoreData;
   final String? error;
-  const UpcomingState({this.items = const [], this.currentPage = 1, this.isLoading = false, this.hasMoreData = true, this.error});
-  UpcomingState copyWith({List<Movie>? items, int? currentPage, bool? isLoading, bool? hasMoreData, String? error}) =>
+  const UpcomingState(
+      {this.items = const [],
+      this.currentPage = 1,
+      this.isLoading = false,
+      this.hasMoreData = true,
+      this.error});
+  UpcomingState copyWith(
+          {List<Movie>? items,
+          int? currentPage,
+          bool? isLoading,
+          bool? hasMoreData,
+          String? error}) =>
       UpcomingState(
         items: items ?? this.items,
         currentPage: currentPage ?? this.currentPage,
@@ -507,7 +561,8 @@ class UpcomingState {
       );
 }
 
-final upcomingProvider = StateNotifierProvider.autoDispose<UpcomingNotifier, UpcomingState>((ref) {
+final upcomingProvider =
+    StateNotifierProvider.autoDispose<UpcomingNotifier, UpcomingState>((ref) {
   final scraper = ref.watch(movieScraperProvider);
   return UpcomingNotifier(scraper);
 });
@@ -522,11 +577,17 @@ class UpcomingNotifier extends StateNotifier<UpcomingState> {
     state = state.copyWith(isLoading: true, error: null);
     try {
       final movies = await _scraper.getUpcoming(page: 1);
-      state = state.copyWith(items: movies, currentPage: 1, isLoading: false, hasMoreData: movies.length >= 20, error: null);
+      state = state.copyWith(
+          items: movies,
+          currentPage: 1,
+          isLoading: false,
+          hasMoreData: movies.length >= 20,
+          error: null);
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
     }
   }
+
   Future<void> loadNextPage() async {
     if (state.isLoading || !state.hasMoreData) return;
     state = state.copyWith(isLoading: true);
@@ -534,11 +595,17 @@ class UpcomingNotifier extends StateNotifier<UpcomingState> {
       final nextPage = state.currentPage + 1;
       final movies = await _scraper.getUpcoming(page: nextPage);
       final updatedItems = [...state.items, ...movies];
-      state = state.copyWith(items: updatedItems, currentPage: nextPage, isLoading: false, hasMoreData: movies.length >= 20, error: null);
+      state = state.copyWith(
+          items: updatedItems,
+          currentPage: nextPage,
+          isLoading: false,
+          hasMoreData: movies.length >= 20,
+          error: null);
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
     }
   }
+
   Future<void> refresh() async {
     state = const UpcomingState();
     await loadInitial();
@@ -552,8 +619,18 @@ class TopRatedState {
   final bool isLoading;
   final bool hasMoreData;
   final String? error;
-  const TopRatedState({this.items = const [], this.currentPage = 1, this.isLoading = false, this.hasMoreData = true, this.error});
-  TopRatedState copyWith({List<Movie>? items, int? currentPage, bool? isLoading, bool? hasMoreData, String? error}) =>
+  const TopRatedState(
+      {this.items = const [],
+      this.currentPage = 1,
+      this.isLoading = false,
+      this.hasMoreData = true,
+      this.error});
+  TopRatedState copyWith(
+          {List<Movie>? items,
+          int? currentPage,
+          bool? isLoading,
+          bool? hasMoreData,
+          String? error}) =>
       TopRatedState(
         items: items ?? this.items,
         currentPage: currentPage ?? this.currentPage,
@@ -563,7 +640,8 @@ class TopRatedState {
       );
 }
 
-final topRatedProvider = StateNotifierProvider<TopRatedNotifier, TopRatedState>((ref) {
+final topRatedProvider =
+    StateNotifierProvider<TopRatedNotifier, TopRatedState>((ref) {
   final scraper = ref.watch(movieScraperProvider);
   return TopRatedNotifier(scraper);
 });
@@ -577,18 +655,25 @@ class TopRatedNotifier extends StateNotifier<TopRatedState> {
     if (state.isLoading) return;
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final movies = await _scraper.getDiscover(page: 1, sortBy: 'vote_average.desc');
-      state = state.copyWith(items: movies, currentPage: 1, isLoading: false, hasMoreData: movies.length >= 20);
+      final movies =
+          await _scraper.getDiscover(page: 1, sortBy: 'vote_average.desc');
+      state = state.copyWith(
+          items: movies,
+          currentPage: 1,
+          isLoading: false,
+          hasMoreData: movies.length >= 20);
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
     }
   }
+
   Future<void> loadNextPage() async {
     if (state.isLoading || !state.hasMoreData) return;
     state = state.copyWith(isLoading: true);
     try {
       final next = state.currentPage + 1;
-      final movies = await _scraper.getDiscover(page: next, sortBy: 'vote_average.desc');
+      final movies =
+          await _scraper.getDiscover(page: next, sortBy: 'vote_average.desc');
       state = state.copyWith(
         items: [...state.items, ...movies],
         currentPage: next,
@@ -599,8 +684,133 @@ class TopRatedNotifier extends StateNotifier<TopRatedState> {
       state = state.copyWith(isLoading: false, error: e.toString());
     }
   }
+
   Future<void> refresh() async {
     state = const TopRatedState();
     await loadInitial();
+  }
+}
+
+extension on List<Movie> {
+  List<Movie> dedupeById() {
+    final seen = <int>{};
+    final out = <Movie>[];
+    for (final m in this) {
+      if (seen.add(m.id)) out.add(m);
+    }
+    return out;
+  }
+}
+
+class AggregatedState {
+  final List<Movie> items;
+  final bool isLoading;
+  final String? error;
+  const AggregatedState(
+      {this.items = const [], this.isLoading = false, this.error});
+  AggregatedState copyWith(
+          {List<Movie>? items, bool? isLoading, String? error}) =>
+      AggregatedState(
+          items: items ?? this.items,
+          isLoading: isLoading ?? this.isLoading,
+          error: error);
+}
+
+final trendingAggProvider =
+    StateNotifierProvider<TrendingAggNotifier, AggregatedState>((ref) {
+  final src = ref.watch(movieScraperProvider);
+  return TrendingAggNotifier(src);
+});
+
+class TrendingAggNotifier extends StateNotifier<AggregatedState> {
+  final MovieScraperSource _src;
+  TrendingAggNotifier(this._src) : super(const AggregatedState()) {
+    load();
+  }
+  Future<void> load() async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      final a = await _src.getTrending(group: 'this-week');
+      final b = await _src.getTrending(group: 'today');
+      final merged = [...a, ...b].dedupeById();
+      state = state.copyWith(items: merged, isLoading: false);
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: e.toString());
+    }
+  }
+}
+
+final popularAggProvider =
+    StateNotifierProvider<PopularAggNotifier, AggregatedState>((ref) {
+  final src = ref.watch(movieScraperProvider);
+  return PopularAggNotifier(src);
+});
+
+class PopularAggNotifier extends StateNotifier<AggregatedState> {
+  final MovieScraperSource _src;
+  PopularAggNotifier(this._src) : super(const AggregatedState()) {
+    loadInitial();
+  }
+  Future<void> loadInitial() async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      final a = await _src.getPopular(group: 'streaming');
+      final b = await _src.getPopular(group: 'on-tv');
+      final c = await _src.getPopular(group: 'for-rent');
+      final d = await _src.getPopular(group: 'in-theatres');
+      final merged = [...a, ...b, ...c, ...d].dedupeById();
+      state = state.copyWith(items: merged, isLoading: false);
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: e.toString());
+    }
+  }
+}
+
+final trailersAggProvider =
+    StateNotifierProvider<TrailersAggNotifier, AggregatedState>((ref) {
+  final src = ref.watch(movieScraperProvider);
+  return TrailersAggNotifier(src);
+});
+
+class TrailersAggNotifier extends StateNotifier<AggregatedState> {
+  final MovieScraperSource _src;
+  TrailersAggNotifier(this._src) : super(const AggregatedState()) {
+    load();
+  }
+  Future<void> load() async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      final a = await _src.getTrailers(group: 'popular');
+      final b = await _src.getTrailers(group: 'streaming');
+      final c = await _src.getTrailers(group: 'on-tv');
+      final merged = [...a, ...b, ...c].dedupeById();
+      state = state.copyWith(items: merged, isLoading: false);
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: e.toString());
+    }
+  }
+}
+
+final freeAggProvider =
+    StateNotifierProvider<FreeAggNotifier, AggregatedState>((ref) {
+  final src = ref.watch(movieScraperProvider);
+  return FreeAggNotifier(src);
+});
+
+class FreeAggNotifier extends StateNotifier<AggregatedState> {
+  final MovieScraperSource _src;
+  FreeAggNotifier(this._src) : super(const AggregatedState()) {
+    load();
+  }
+  Future<void> load() async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      final a = await _src.getFreeToWatch(group: 'movie');
+      final b = await _src.getFreeToWatch(group: 'tv');
+      final merged = [...a, ...b].dedupeById();
+      state = state.copyWith(items: merged, isLoading: false);
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: e.toString());
+    }
   }
 }

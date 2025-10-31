@@ -1,16 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'themes/app_theme.dart';
 import '../core/constants/app_constants.dart';
+import '../core/navigation/ad_navigation_observer.dart';
 import '../presentation/screens/splash/splash_screen.dart';
 import '../presentation/screens/pro_upgrade/pro_upgrade_screen.dart';
+import '../presentation/providers/theme_provider.dart';
 
 /// Root application widget
-class MovieWallsApp extends StatelessWidget {
+class MovieWallsApp extends ConsumerWidget {
   const MovieWallsApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeMode = ref.watch(themeModeProvider);
+    
     return ScreenUtilInit(
       designSize: const Size(375, 812), // iPhone 11 Pro size as base
       minTextAdapt: true,
@@ -19,9 +24,10 @@ class MovieWallsApp extends StatelessWidget {
         return MaterialApp(
           title: AppConstants.appName,
           debugShowCheckedModeBanner: false,
-          theme: AppTheme.darkTheme,
+          theme: AppTheme.lightTheme,
           darkTheme: AppTheme.darkTheme,
-          themeMode: ThemeMode.dark,
+          themeMode: themeMode,
+          navigatorObservers: [AdNavigationObserver()],
           home: const SplashScreen(),
           routes: {
             '/pro-upgrade': (context) => const ProUpgradeScreen(),

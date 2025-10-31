@@ -14,13 +14,13 @@ import '../../providers/favorites_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../widgets/cached_image_widget.dart';
 import '../../widgets/loading_indicator.dart';
+import '../../widgets/download_progress_dialog.dart';
 import 'package:share_plus/share_plus.dart';
-import 'dart:io';
+import 'dart:async';
 import '../../../services/scraping/scraping_service.dart';
-import '../../../core/constants/app_constants.dart';
-import '../../../services/image_processing/image_pipeline_service.dart';
-import '../../../services/image_processing/image_optimizer_service.dart';
+import '../../../core/utils/logger.dart';
 import '../../../core/constants/tmdb_endpoints.dart';
+import '../../../core/constants/app_constants.dart';
 
 /// Complete movie detail screen with posters and backdrops gallery
 class MovieDetailScreen extends ConsumerStatefulWidget {
@@ -37,7 +37,6 @@ class MovieDetailScreen extends ConsumerStatefulWidget {
 
 class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
   int _selectedTab = 1; // 0: Backdrops, 1: Posters
-  bool _isDownloadingAll = false;
 
   List<String> _allPosters = [];
   List<String> _allBackdrops = [];
@@ -50,10 +49,7 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
   String? _releaseDate;
   String? _certification;
   List<String> _genres = [];
-  String? _userScore;
 
-  static const String _imageBase = 'https://image.tmdb.org/t/p';
-  String _imageUrl(String path, {String size = 'w500'}) => '$_imageBase/$size$path';
 
   @override
   void initState() {
@@ -64,20 +60,20 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
 
   Future<void> _fetchMovieDetails() async {
     try {
-      final mediaType = widget.movie.mediaType.isNotEmpty ? widget.movie.mediaType : 'movie';
+      final mediaType =
+          widget.movie.mediaType.isNotEmpty ? widget.movie.mediaType : 'movie';
       final map = await ScrapingService.instance.fetchDetails(
         mediaType: mediaType,
         id: widget.movie.id,
       );
       if (!mounted) return;
-      setState(() {
+    setState(() {
         _overview = map['overview'] as String?;
         _tagline = map['tagline'] as String?;
         _runtime = map['runtime'] as String?;
         _releaseDate = map['releaseDate'] as String?;
         _certification = map['certification'] as String?;
         _genres = (map['genres'] as List?)?.cast<String>() ?? [];
-        _userScore = map['userScore'] as String?;
       });
     } catch (e) {
       // keep UI resilient
@@ -87,7 +83,8 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
   Future<void> _fetchAllImages() async {
     setState(() => _isLoadingImages = true);
     try {
-      final mediaType = widget.movie.mediaType.isNotEmpty ? widget.movie.mediaType : 'movie';
+      final mediaType =
+          widget.movie.mediaType.isNotEmpty ? widget.movie.mediaType : 'movie';
       final posters = await ScrapingService.instance.fetchImages(
         mediaType: mediaType,
         id: widget.movie.id,
@@ -124,6 +121,18 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
         actions: [
           Consumer(
             builder: (context, ref, child) {
+              final isPro = ref.watch(isProUserProvider);
+              return IconButton(
+                icon: const Icon(Icons.downloading),
+                tooltip: isPro ? 'Download all images' : 'Pro feature',
+                onPressed: () async {
+                  await _handleDownloadAll(context);
+                },
+              );
+            },
+          ),
+          Consumer(
+            builder: (context, ref, child) {
               final isFavorite = ref.watch(isFavoriteProvider(widget.movie.id));
               return IconButton(
                 icon: Icon(isFavorite ? Icons.favorite : Icons.favorite_border),
@@ -152,11 +161,16 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
       ),
       body: CustomScrollView(
         slivers: [
-          // Hero Image (restored) with watermark
-          SliverToBoxAdapter(
-            child: SizedBox(
-              height: 300.h,
-              child: Stack(
+          // Sliver hero with overview overlay
+          SliverAppBar(
+            backgroundColor: AppColors.darkBackground,
+            elevation: 0,
+            pinned: false,
+            stretch: true,
+            automaticallyImplyLeading: false,
+            expandedHeight: 340.h,
+            flexibleSpace: FlexibleSpaceBar(
+              background: Stack(
                 fit: StackFit.expand,
                 children: [
                   if (widget.movie.hasBackdrop)
@@ -165,8 +179,8 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
                         widget.movie.backdropPath!,
                         size: BackdropSize.w1280,
                       ),
-                      fit: BoxFit.cover,
-                    )
+                    fit: BoxFit.cover,
+                  )
                   else if (widget.movie.hasPoster)
                     CachedImageWidget(
                       imageUrl: TMDBEndpoints.posterUrl(
@@ -177,139 +191,55 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
                     )
                   else
                     Container(color: AppColors.darkSurface),
-                  // gradient overlay
                   Container(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          Colors.transparent,
-                          Colors.black.withOpacity(0.6),
+                          Colors.black.withOpacity(0.2),
+                          Colors.black.withOpacity(0.7),
                         ],
                       ),
                     ),
                   ),
-                  // Watermark overlay
+                  // Overview overlay
                   Positioned(
-                    right: AppDimensions.space12,
-                    bottom: AppDimensions.space12,
-                    child: Opacity(
-                      opacity: AppConstants.watermarkOpacity,
-                      child: Container(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: AppDimensions.space8,
-                          vertical: AppDimensions.space4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.4),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          AppConstants.watermarkText,
-                          style: AppTextStyles.caption.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // Content
-          SliverToBoxAdapter(
+                    left: AppDimensions.space20,
+                    right: AppDimensions.space20,
+                    bottom: AppDimensions.space16,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Title and Rating
-                Padding(
-                  padding: EdgeInsets.all(AppDimensions.space20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
                         widget.movie.title,
                         style: AppTextStyles.headline3,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                       ),
                       SizedBox(height: AppDimensions.space8),
                       Row(
-                        children: [
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(Icons.star,
                                   size: 18.w, color: AppColors.ratingGold),
                               SizedBox(width: 4.w),
-                              Text(
-                                widget.movie.formattedRating,
-                                style: AppTextStyles.bodyLarge.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                          if (_userScore != null) ...[
-                            SizedBox(width: 12.w),
-                            Container(
-                              padding: EdgeInsets.symmetric(
-                                  horizontal: 8.w, vertical: 4.h),
-                              decoration: BoxDecoration(
-                                color: AppColors.success,
-                                borderRadius: BorderRadius.circular(4.w),
-                              ),
-                              child: Text(
-                                '${_userScore}%',
-                                style: AppTextStyles.caption.copyWith(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
+                            Text(widget.movie.formattedRating,
+                                style: AppTextStyles.bodyLarge
+                                    .copyWith(fontWeight: FontWeight.w600)),
                           ],
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-
-                // Overview with Read More
+                        ),
                 if (_overview != null && _overview!.isNotEmpty) ...[
-                  Padding(
-                    padding:
-                        EdgeInsets.symmetric(horizontal: AppDimensions.space20),
-                    child: Container(
-                      padding: EdgeInsets.all(AppDimensions.space16),
-                      decoration: BoxDecoration(
-                        color: AppColors.darkSurface,
-                        borderRadius:
-                            BorderRadius.circular(AppDimensions.radiusMedium),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(Icons.info_outline,
-                                  size: 20.w, color: AppColors.accentColor),
-                              SizedBox(width: 8.w),
-                              Text('Overview',
-                                  style: AppTextStyles.sectionTitle),
-                            ],
-                          ),
                           SizedBox(height: AppDimensions.space12),
                           Text(
                             _overview!,
                             style:
                                 AppTextStyles.bodyMedium.copyWith(height: 1.5),
-                            maxLines: 2,
+                            maxLines: 4,
                             overflow: TextOverflow.ellipsis,
                           ),
                           SizedBox(height: AppDimensions.space8),
-                          InkWell(
+                          GestureDetector(
                             onTap: () => _showFullOverview(context),
                             child: Text(
                               'Read more',
@@ -320,17 +250,31 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
                             ),
                           ),
                         ],
+                        ],
                       ),
                     ),
-                  ),
-                  SizedBox(height: AppDimensions.space24),
                 ],
+              ),
+            ),
+          ),
 
-                // Gallery Tabs
-                Padding(
-                  padding:
-                      EdgeInsets.symmetric(horizontal: AppDimensions.space20),
+          // Sticky tabs header
+          //SizedBox(height: AppDimensions.space12),
+          SliverPersistentHeader(
+            pinned: true,
+            delegate: _StickyTabHeader(
+              minExtentHeight: 56.0,
+              maxExtentHeight: 56.0,
+              builder: (context) => Container(
+                height: 80.h,
+                color: AppColors.darkBackground,
+                //margin: EdgeInsets.only(top: AppDimensions.space4),
+                padding: EdgeInsets.symmetric(
+                  horizontal: AppDimensions.space20,
+                  //vertical: AppDimensions.space8
+                ),
                   child: Container(
+                  height: 80.h,
                     padding: EdgeInsets.all(4.w),
                     decoration: BoxDecoration(
                       color: AppColors.darkSurface,
@@ -343,12 +287,19 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
                             child: _buildTabButton(
                                 'Posters', 1, Icons.aspect_ratio)),
                         Expanded(
-                            child:
-                                _buildTabButton('Backdrops', 0, Icons.photo)),
+                          child: _buildTabButton('Backdrops', 0, Icons.photo)),
                       ],
                     ),
                   ),
                 ),
+            ),
+          ),
+
+          // Content
+          SliverToBoxAdapter(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 SizedBox(height: AppDimensions.space20),
 
                 // Gallery
@@ -364,7 +315,7 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: _buildBottomActions(),
+      // Removed bottom actions; toolbar buttons handle downloads
     );
   }
 
@@ -388,6 +339,7 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Icon(icon,
                 color: isSelected ? Colors.white : AppColors.textSecondary),
@@ -455,126 +407,53 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
         itemCount: images.length,
         itemBuilder: (context, index) {
           final rawPath = images[index];
-          if (_selectedTab == 0) {
-            return ClipRRect(
+          final isBackdrop = _selectedTab == 0;
+          final imageUrl = isBackdrop
+              ? TMDBEndpoints.backdropUrl(rawPath, size: BackdropSize.w1280)
+              : TMDBEndpoints.posterUrl(rawPath, size: PosterSize.w780);
+
+          return GestureDetector(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => _ImageFullScreenView(
+                    imageUrl: imageUrl,
+                    rawPath: rawPath,
+                    isBackdrop: isBackdrop,
+                    movieTitle: widget.movie.title,
+                  ),
+                ),
+              );
+            },
+            child: ClipRRect(
               borderRadius: BorderRadius.circular(AppDimensions.radiusMedium),
               child: CachedImageWidget(
-                imageUrl: TMDBEndpoints.backdropUrl(rawPath, size: BackdropSize.w1280),
+                imageUrl: imageUrl,
                 fit: BoxFit.cover,
               ),
-            );
-          } else {
-            return ClipRRect(
-              borderRadius: BorderRadius.circular(AppDimensions.radiusMedium),
-              child: CachedImageWidget(
-                imageUrl: TMDBEndpoints.posterUrl(rawPath, size: PosterSize.w780),
-                fit: BoxFit.cover,
-              ),
-            );
-          }
+            ),
+          );
         },
       ),
     );
   }
 
-  Widget _buildBottomActions() {
-    final isPro = ref.read(isProUserProvider);
-    final totalImages = _allPosters.length + _allBackdrops.length;
-
-    return Container(
-      padding: EdgeInsets.all(AppDimensions.space16),
-      decoration: BoxDecoration(
-        color: AppColors.darkSurface,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.3),
-            offset: const Offset(0, -2),
-            blurRadius: 10,
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (!isPro) ...[
-            InkWell(
-              onTap: () {
-                Navigator.pushNamed(context, '/pro-upgrade');
-              },
-              child: Container(
-                padding: EdgeInsets.all(AppDimensions.space12),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      AppColors.proGradientStart,
-                      AppColors.proGradientEnd
-                    ],
-                  ),
-                  borderRadius:
-                      BorderRadius.circular(AppDimensions.radiusMedium),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.star, color: Colors.white, size: 20.w),
-                    SizedBox(width: 8.w),
-                    Expanded(
-                      child: Text(
-                        'Upgrade to Pro to download all $totalImages images!',
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            SizedBox(height: AppDimensions.space12),
-          ],
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: _isDownloadingAll
-                      ? null
-                      : () => _handleDownloadAll(context),
-                  icon: _isDownloadingAll
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Icon(isPro ? Icons.download : Icons.ads_click),
-                  label: Text(isPro
-                      ? 'Download All ($totalImages)'
-                      : 'Watch Ad to Download'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.accentColor,
-                    padding:
-                        EdgeInsets.symmetric(vertical: AppDimensions.space12),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
+  // Removed bottom actions; toolbar buttons handle downloads
 
   Future<void> _handleDownloadAll(BuildContext context) async {
     final isPro = ref.read(isProUserProvider);
 
-    // Check if user is Pro
+    // Check if user is Pro - download all is pro-only
     if (!isPro) {
-      // Show dialog to upgrade or watch ads
-      final shouldUpgrade = await showDialog<bool>(
+      if (mounted) {
+        final shouldWatchAd = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('Download All Images'),
+            title: const Text('Pro Feature'),
           content: const Text(
-              'You need to upgrade to Pro or watch 10 ads to download all images.'),
+              'Download all images is a Pro feature. You can either upgrade to Pro or watch a video ad to unlock this feature for this session.',
+            ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
@@ -582,11 +461,11 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
             ),
             TextButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('Watch Ads'),
+                child: const Text('Watch Ad'),
             ),
             ElevatedButton(
               onPressed: () {
-                Navigator.pop(context);
+                  Navigator.pop(context, false);
                 Navigator.pushNamed(context, '/pro-upgrade');
               },
               child: const Text('Upgrade to Pro'),
@@ -595,22 +474,97 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
         ),
       );
 
-      if (shouldUpgrade == null || !shouldUpgrade) return;
-
-      // Watch 10 ads
-      for (int i = 0; i < 10; i++) {
-        await AdService.instance.showRewardedAd();
-        print('🔍 [DOWNLOAD] Watched ad ${i + 1}/10');
+        if (shouldWatchAd == true) {
+          // Show rewarded interstitial ad
+          await AdService.instance.showRewardedInterstitialAd(
+            onRewardEarned: () {
+              // Allow download after watching ad
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Feature unlocked! You can now download all images.'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            },
+          );
+          
+          // Continue with download after ad
+          final allImages = <String>[];
+          allImages.addAll(_allBackdrops);
+          allImages.addAll(_allPosters);
+          if (allImages.isNotEmpty) {
+            await _showDownloadAllConfirmationAndDownload(context, allImages, false);
+          }
+        }
       }
+      return;
     }
 
-    await _downloadAllImages();
+    // Get all images
+    final allImages = <String>[];
+    allImages.addAll(_allBackdrops);
+    allImages.addAll(_allPosters);
+
+    if (allImages.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No images available to download')),
+        );
+      }
+      return;
+    }
+
+    await _showDownloadAllConfirmationAndDownload(context, allImages, isPro);
   }
 
-  Future<void> _downloadAllImages() async {
-    setState(() => _isDownloadingAll = true);
+  Future<void> _showDownloadAllConfirmationAndDownload(
+    BuildContext context,
+    List<String> allImages,
+    bool isPro,
+  ) async {
+    // Show confirmation dialog
+    final shouldContinue = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+        title: const Text('Download All Images?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('You are about to download ${allImages.length} images.'),
+            const SizedBox(height: 12),
+            const Text(
+              '⚠️ This will incur significant internet data usage.',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Images: ${_allBackdrops.length} backdrops + ${_allPosters.length} posters',
+              style: const TextStyle(fontSize: 12),
+            ),
+          ],
+        ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+          ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+            child: const Text('Continue Download'),
+            ),
+          ],
+        ),
+      );
 
-    try {
+    if (shouldContinue != true) return;
+
+    await _downloadAllImages(allImages);
+  }
+
+  Future<void> _downloadAllImages(List<String> imagePaths) async {
+    if (!mounted) return;
+
       await PermissionService.instance.requestAllPermissions();
       if (!await PermissionService.instance.hasStoragePermission()) {
         if (mounted) {
@@ -621,84 +575,103 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
         return;
       }
 
-      final selectedImage = _getCurrentImage();
-      print('🔍 Download: Selected image path: $selectedImage');
+    final isProUser = ref.read(isProUserProvider);
+    
+    // Build URLs with original quality
+    final imageUrls = <String>[];
+    final imageNames = <String>[];
+    
+    for (final path in imagePaths) {
+      // Determine if it's a backdrop or poster based on which list it's in
+      final isBackdrop = _allBackdrops.contains(path);
+      final url = isBackdrop
+          ? TMDBEndpoints.backdropUrl(path, size: BackdropSize.original)
+          : TMDBEndpoints.posterUrl(path, size: PosterSize.original);
+      
+      // Skip if already downloaded
+      if (DownloadService.instance.isAlreadyDownloaded(url)) {
+        continue;
+      }
+      
+      imageUrls.add(url);
+      imageNames.add(isBackdrop ? 'Backdrop ${_allBackdrops.indexOf(path) + 1}' : 'Poster ${_allPosters.indexOf(path) + 1}');
+    }
 
-      if (selectedImage == null) {
+    if (imageUrls.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No image available')),
+          const SnackBar(content: Text('All images already downloaded!')),
           );
         }
         return;
       }
 
-      final url = _imageUrl(
-        selectedImage,
-        size: 'original',
-      );
+    // Create progress streams
+    final progressController = StreamController<double>.broadcast();
+    final currentItemController = StreamController<String>.broadcast();
+    final completedController = StreamController<int>.broadcast();
 
-      print('🔍 Download: URL = $url');
+    // Show progress dialog (don't await - it stays open via streams)
+    DownloadProgressDialog.show(
+      context: context,
+      title: 'Downloading Images',
+      subtitle: 'Downloading ${imageUrls.length} images...',
+      progressStream: progressController.stream,
+      currentItemStream: currentItemController.stream,
+      totalItems: imageUrls.length,
+      completedItemsStream: completedController.stream,
+    );
 
-      // Check if user is Pro
-      final isProUser = ref.read(isProUserProvider);
-
+    try {
+      int completed = 0;
+      
+      for (int i = 0; i < imageUrls.length; i++) {
+        currentItemController.add(imageNames[i]);
+        
+        try {
       await DownloadService.instance.downloadWallpaper(
-        imageUrl: url,
+            imageUrl: imageUrls[i],
         movieTitle: widget.movie.title,
         isPro: isProUser,
-      );
-
-      print('🔍 Download: Download completed');
-
-      // Show interstitial ad after download
-      await AdService.instance.showInterstitialAfterDownload();
+            onProgress: (progress) {
+              final overallProgress = (i + progress) / imageUrls.length;
+              progressController.add(overallProgress);
+            },
+          );
+          
+          completed++;
+          completedController.add(completed);
+          progressController.add((i + 1) / imageUrls.length);
+        } catch (e) {
+          AppLogger.e('Failed to download ${imageUrls[i]}', e);
+        }
+      }
 
       if (mounted) {
+        Navigator.of(context).pop(); // Close progress dialog
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Download completed!')),
+          SnackBar(
+            content: Text('Successfully downloaded $completed/${imageUrls.length} images!'),
+            backgroundColor: Colors.green,
+          ),
         );
       }
     } catch (e, stackTrace) {
-      print('❌ Download Error: $e');
-      print('❌ Stack trace: $stackTrace');
+      AppLogger.e('Download all failed', e, stackTrace);
       if (mounted) {
+        Navigator.of(context).pop(); // Close progress dialog
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Download failed: $e')),
+          SnackBar(
+            content: Text('Download failed: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {
-      if (mounted) {
-        setState(() => _isDownloadingAll = false);
-      }
+      await progressController.close();
+      await currentItemController.close();
+      await completedController.close();
     }
-  }
-
-  String? _getCurrentImage() {
-    print('🔍 Current tab: ${_selectedTab == 0 ? "Backdrops" : "Posters"}');
-    print('🔍 All backdrops count: ${_allBackdrops.length}');
-    print('🔍 All posters count: ${_allPosters.length}');
-
-    // Get images from fetched gallery first
-    final images = _selectedTab == 0 ? _allBackdrops : _allPosters;
-
-    if (images.isNotEmpty) {
-      print('🔍 Using gallery image: ${images[0]}');
-      return images[0];
-    }
-
-    // Fallback to movie's default image
-    final fallbackImages = _selectedTab == 0
-        ? [
-            if (widget.movie.backdropPath != null) widget.movie.backdropPath!,
-          ]
-        : [
-            if (widget.movie.posterPath != null) widget.movie.posterPath!,
-          ];
-
-    final selected = fallbackImages.isNotEmpty ? fallbackImages[0] : null;
-    print('🔍 Selected fallback image: $selected');
-    return selected;
   }
 
   void _showFullOverview(BuildContext context) {
@@ -1015,7 +988,7 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
 }
 
 /// Full screen image viewer
-class _ImageFullScreenView extends StatefulWidget {
+class _ImageFullScreenView extends ConsumerStatefulWidget {
   final String imageUrl;
   final String rawPath;
   final bool isBackdrop;
@@ -1029,10 +1002,10 @@ class _ImageFullScreenView extends StatefulWidget {
   });
 
   @override
-  State<_ImageFullScreenView> createState() => _ImageFullScreenViewState();
+  ConsumerState<_ImageFullScreenView> createState() => _ImageFullScreenViewState();
 }
 
-class _ImageFullScreenViewState extends State<_ImageFullScreenView> {
+class _ImageFullScreenViewState extends ConsumerState<_ImageFullScreenView> {
   bool _isDownloading = false;
   bool _isSettingWallpaper = false;
 
@@ -1050,26 +1023,15 @@ class _ImageFullScreenViewState extends State<_ImageFullScreenView> {
         return;
       }
 
-      // Ask user for desired size
-      final size = await _pickSize(context, widget.isBackdrop);
-      if (size == null) {
-        return;
-      }
+      // Use TMDB original size URL directly
+      final downloadUrl = widget.isBackdrop
+          ? TMDBEndpoints.backdropUrl(widget.rawPath, size: BackdropSize.original)
+          : TMDBEndpoints.posterUrl(widget.rawPath, size: PosterSize.original);
 
-      // Generate local variant (with watermark for free) and save locally via DownloadService
-      final variant = await ImagePipelineService.instance.getLocalVariant(
-        rawPathOrUrl: widget.rawPath,
-        size: size,
-        isBackdrop: widget.isBackdrop,
-        watermark: true,
-        isPro: false,
-      );
-
-      await DownloadService.instance.saveLocalImageFile(
-        sourcePath: variant.path,
+      await DownloadService.instance.downloadWallpaper(
+        imageUrl: downloadUrl,
         movieTitle: widget.movieTitle,
         isPro: false,
-        quality: size == 'original' ? ImageQuality.original : (size == 'w1280' || size == 'w900') ? ImageQuality.fullHd : ImageQuality.hd,
       );
 
       await AdService.instance.showInterstitialAfterDownload();
@@ -1092,36 +1054,6 @@ class _ImageFullScreenViewState extends State<_ImageFullScreenView> {
     }
   }
 
-  Future<String?> _pickSize(BuildContext context, bool isBackdrop) async {
-    final sizes = isBackdrop
-        ? <String>['w780', 'w900', 'w1280', 'original']
-        : <String>['w342', 'w500', 'w780', 'w900', 'original'];
-    return showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: AppColors.darkSurface,
-      builder: (context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: EdgeInsets.all(AppDimensions.space16),
-                child: Text(
-                  'Select Image Quality',
-                  style: AppTextStyles.sectionTitle,
-                ),
-              ),
-              ...sizes.map((s) => ListTile(
-                    title: Text(s, style: AppTextStyles.bodyLarge),
-                    onTap: () => Navigator.pop(context, s),
-                  )),
-              SizedBox(height: AppDimensions.space12),
-            ],
-          ),
-        );
-      },
-    );
-  }
 
   Future<void> _setAsWallpaper() async {
     setState(() => _isSettingWallpaper = true);
@@ -1137,15 +1069,15 @@ class _ImageFullScreenViewState extends State<_ImageFullScreenView> {
         return;
       }
 
-      final filePath = await DownloadService.instance.downloadWallpaper(
-        imageUrl: widget.imageUrl,
-        movieTitle: widget.movieTitle,
-        isPro: false,
-      );
+      // Use TMDB original size URL for wallpaper
+      // Use original quality URL
+      final wallpaperUrl = widget.isBackdrop
+          ? TMDBEndpoints.backdropUrl(widget.rawPath, size: BackdropSize.original)
+          : TMDBEndpoints.posterUrl(widget.rawPath, size: PosterSize.original);
 
-      if (filePath != null && File(filePath).existsSync()) {
-        final success = await WallpaperService.instance.setWallpaperFromFile(
-          filePath: filePath,
+      // Set wallpaper directly from URL (uses original quality)
+      final success = await WallpaperService.instance.setWallpaperFromUrl(
+        imageUrl: wallpaperUrl,
           location: WallpaperLocation.both,
         );
 
@@ -1158,7 +1090,6 @@ class _ImageFullScreenViewState extends State<_ImageFullScreenView> {
                     ? 'Wallpaper set successfully!'
                     : 'Failed to set wallpaper')),
           );
-        }
       }
     } catch (e) {
       if (mounted) {
@@ -1175,17 +1106,49 @@ class _ImageFullScreenViewState extends State<_ImageFullScreenView> {
 
   @override
   Widget build(BuildContext context) {
+    final isPro = ref.watch(isProUserProvider);
+    
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         iconTheme: const IconThemeData(color: Colors.white),
+        automaticallyImplyLeading: false,
       ),
-      body: InteractiveViewer(
+      body: Stack(
+        children: [
+          InteractiveViewer(
         child: CachedImageWidget(
           imageUrl: widget.imageUrl,
           fit: BoxFit.contain,
         ),
+          ),
+          // Watermark overlay for free users
+          if (!isPro)
+            Center(
+              child: IgnorePointer(
+                child: Container(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 16.w,
+                    vertical: 8.h,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.4),
+                    borderRadius: BorderRadius.circular(8.w),
+                  ),
+                  child: Text(
+                    AppConstants.watermarkText,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(AppConstants.watermarkOpacity),
+                      fontSize: 24.sp,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
       bottomNavigationBar: Container(
         padding: EdgeInsets.all(AppDimensions.space16),
@@ -1241,5 +1204,35 @@ class _ImageFullScreenViewState extends State<_ImageFullScreenView> {
         ),
       ),
     );
+  }
+}
+
+// Sticky header delegate
+class _StickyTabHeader extends SliverPersistentHeaderDelegate {
+  final double minExtentHeight;
+  final double maxExtentHeight;
+  final WidgetBuilder builder;
+  _StickyTabHeader(
+      {required this.minExtentHeight,
+      required this.maxExtentHeight,
+      required this.builder});
+
+  @override
+  Widget build(
+      BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return builder(context);
+  }
+
+  @override
+  double get maxExtent => maxExtentHeight;
+
+  @override
+  double get minExtent => minExtentHeight;
+
+  @override
+  bool shouldRebuild(covariant _StickyTabHeader oldDelegate) {
+    return oldDelegate.minExtentHeight != minExtentHeight ||
+        oldDelegate.maxExtentHeight != maxExtentHeight ||
+        oldDelegate.builder != builder;
   }
 }

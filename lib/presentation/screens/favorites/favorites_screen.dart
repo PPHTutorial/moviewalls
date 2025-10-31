@@ -47,7 +47,7 @@ class FavoritesScreen extends ConsumerWidget {
           : ListView(
               padding: EdgeInsets.all(AppDimensions.space16),
               children: [
-                // Banner Ad
+                // Top Banner Ad
                 const AdBannerWidget(),
                 SizedBox(height: AppDimensions.space16),
                 // GridView
@@ -76,6 +76,10 @@ class FavoritesScreen extends ConsumerWidget {
                     );
                   },
                 ),
+                SizedBox(height: AppDimensions.space24),
+                // Bottom Banner Ad
+                const AdBannerWidget(),
+                SizedBox(height: AppDimensions.space16),
               ],
             ),
     );

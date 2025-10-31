@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'data/models/movie_model.dart';
 import 'app/app.dart';
+import 'services/ads/ad_service.dart';
 // Data fetching removed during logic rebuild
 
 void main() async {
@@ -15,6 +16,9 @@ void main() async {
   if (!Hive.isAdapterRegistered(0)) {
     Hive.registerAdapter(MovieModelAdapter());
   }
+
+  // Initialize AdMob
+  await AdService.instance.initialize();
 
   // Set system UI overlay style
   SystemChrome.setSystemUIOverlayStyle(

@@ -45,8 +45,9 @@ dependencies:
   share_plus: ^7.2.1
   url_launcher: ^6.2.4
   path_provider: ^2.1.2
-  package_info_plus: ^5.0.1
+  package_info_plus: ^9.0.0
   device_info_plus: ^9.1.0
+  in_app_review: ^2.0.8
 
   # Wallpaper Setting
   flutter_wallpaper_manager: ^0.0.3
@@ -67,6 +68,9 @@ dependencies:
   dartz: ^0.10.1
   logger: ^2.0.2+1
 
+  flutter_inappwebview: ^6.1.5
+  google_sign_in: ^7.2.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -75,6 +79,7 @@ dev_dependencies:
   riverpod_generator: ^2.3.11
   hive_generator: ^2.0.1
   json_serializable: ^6.7.1
+  flutter_launcher_icons: ^0.14.0
 
 flutter:
   uses-material-design: true
@@ -83,4 +88,12 @@ flutter:
     - assets/images/
     - assets/icons/
     - assets/lottie/
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/images/moviewalls.png"
+  min_sdk_android: 24
+  adaptive_icon_background: "#000000"
+  adaptive_icon_foreground: "assets/images/moviewalls.png"
 

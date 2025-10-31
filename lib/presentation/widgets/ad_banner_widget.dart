@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import '../../app/themes/app_colors.dart';
 import '../../app/themes/app_dimensions.dart';
 import '../../services/ads/ad_service.dart';
+import '../../services/iap/subscription_manager.dart';
+import '../../presentation/providers/subscription_provider.dart';
 
-/// Ad banner widget
-class AdBannerWidget extends StatefulWidget {
+/// Ad banner widget (respects Pro status - no ads for Pro users)
+class AdBannerWidget extends ConsumerStatefulWidget {
   final bool showAd;
   
   const AdBannerWidget({
@@ -14,20 +17,26 @@ class AdBannerWidget extends StatefulWidget {
   });
 
   @override
-  State<AdBannerWidget> createState() => _AdBannerWidgetState();
+  ConsumerState<AdBannerWidget> createState() => _AdBannerWidgetState();
 }
 
-class _AdBannerWidgetState extends State<AdBannerWidget> {
+class _AdBannerWidgetState extends ConsumerState<AdBannerWidget> {
   BannerAd? _bannerAd;
   bool _isAdLoaded = false;
 
   @override
   void initState() {
     super.initState();
-    if (widget.showAd) {
+    _maybeLoadAd();
+  }
+
+  void _maybeLoadAd() {
+    // Check Pro status before loading ads
+    final isPro = SubscriptionManager.instance.isProUser;
+    if (widget.showAd && !isPro) {
       // Delay ad loading to ensure AdMob is fully initialized
       Future.delayed(const Duration(seconds: 1), () {
-        if (mounted) {
+        if (mounted && !SubscriptionManager.instance.isProUser) {
           _loadAd();
         }
       });
@@ -46,7 +55,13 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
         }
       },
       onAdFailedToLoad: (ad, error) {
-        print('❌ [BANNER] Banner ad failed to load: ${error.message}, Code: ${error.code}, Domain: ${error.domain}');
+        // Code 3 is "No fill" - normal occurrence, log as info not error
+        if (error.code == 3) {
+          // No fill is normal - AdMob doesn't always have ads available
+          // Silently handle this - widget will just not show an ad
+        } else {
+          print('❌ [BANNER] Banner ad failed to load: ${error.message}, Code: ${error.code}, Domain: ${error.domain}');
+        }
         if (mounted) {
           setState(() {
             _isAdLoaded = false;
@@ -64,7 +79,24 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
 
   @override
   Widget build(BuildContext context) {
-    if (!widget.showAd || !_isAdLoaded || _bannerAd == null) {
+    // Watch Pro status - dispose ad if user becomes Pro
+    final isPro = ref.watch(isProUserProvider);
+    
+    // Dispose ad if user becomes Pro
+    if (isPro && _bannerAd != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _bannerAd?.dispose();
+        _bannerAd = null;
+        if (mounted) {
+          setState(() {
+            _isAdLoaded = false;
+          });
+        }
+      });
+    }
+    
+    // Don't show ads for Pro users or if ad not loaded
+    if (isPro || !widget.showAd || !_isAdLoaded || _bannerAd == null) {
       return const SizedBox.shrink();
     }
 

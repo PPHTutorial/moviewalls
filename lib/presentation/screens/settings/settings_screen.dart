@@ -1,14 +1,16 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:in_app_review/in_app_review.dart';
 import '../../../app/themes/app_colors.dart';
 import '../../../app/themes/app_text_styles.dart';
 import '../../../app/themes/app_dimensions.dart';
-import '../../../core/constants/app_constants.dart';
 import '../../screens/pro_upgrade/pro_upgrade_screen.dart';
 import '../../../services/iap/purchase_service.dart';
 import '../../../services/storage/cache_service.dart';
+import '../../providers/theme_provider.dart';
 
 /// Settings screen
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -62,12 +64,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         children: [
           // Appearance Section
           _buildSectionHeader('Appearance'),
-          _buildListTile(
-            icon: Icons.palette_outlined,
-            title: 'Theme',
-            subtitle: 'Dark',
-            onTap: () {
-              // TODO: Theme selector
+          Consumer(
+            builder: (context, ref, child) {
+              final themeMode = ref.watch(themeModeProvider);
+              final themeModeText = themeMode == ThemeMode.light
+                  ? 'Light'
+                  : themeMode == ThemeMode.dark
+                      ? 'Dark'
+                      : 'System';
+              return _buildListTile(
+                icon: Icons.palette_outlined,
+                title: 'Theme',
+                subtitle: themeModeText,
+                trailing: Switch(
+                  value: themeMode == ThemeMode.dark,
+                  onChanged: (value) {
+                    ref.read(themeModeProvider.notifier).setThemeMode(
+                          value ? ThemeMode.dark : ThemeMode.light,
+                        );
+                  },
+                ),
+              );
             },
           ),
           _buildListTile(
@@ -163,25 +180,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           _buildListTile(
             icon: Icons.privacy_tip_outlined,
             title: 'Privacy Policy',
-            onTap: () => _launchUrl(AppConstants.privacyPolicyUrl),
+            onTap: () => _showPrivacyPolicy(context),
           ),
           _buildListTile(
             icon: Icons.description_outlined,
             title: 'Terms of Service',
-            onTap: () => _launchUrl(AppConstants.termsOfServiceUrl),
+            onTap: () => _showTermsOfService(context),
           ),
           _buildListTile(
             icon: Icons.star_outline,
             title: 'Rate App',
-            onTap: () {
-              // TODO: Open app store for rating
-            },
+            onTap: () => _rateApp(),
           ),
           _buildListTile(
             icon: Icons.email_outlined,
             title: 'Contact Support',
-            subtitle: AppConstants.supportEmail,
-            onTap: () => _launchUrl('mailto:${AppConstants.supportEmail}'),
+            subtitle: 'deverloper.codeink.playconsole@gmail.com',
+            onTap: () => _contactSupport(),
           ),
         ],
       ),
@@ -273,5 +288,140 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       }
     }
   }
+
+  Future<void> _rateApp() async {
+    final InAppReview inAppReview = InAppReview.instance;
+    try {
+      if (await inAppReview.isAvailable()) {
+        await inAppReview.requestReview();
+      } else {
+        // Fallback to opening store
+        await _launchUrl(
+          Platform.isAndroid
+              ? 'https://play.google.com/store/apps/details?id=com.codeink.stsl.movie_posters'
+              : 'https://apps.apple.com/app/idYOUR_APP_ID',
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open app store')),
+        );
+      }
+    }
+  }
+
+  Future<void> _contactSupport() async {
+    final email = 'deverloper.codeink.playconsole@gmail.com';
+    final subject = 'MovieWalls App Support';
+    final uri = Uri(
+      scheme: 'mailto',
+      path: email,
+      query: 'subject=${Uri.encodeComponent(subject)}',
+    );
+    await _launchUrl(uri.toString());
+  }
+
+  void _showPrivacyPolicy(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Privacy Policy'),
+        content: SingleChildScrollView(
+          child: Text(_privacyPolicyText),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showTermsOfService(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Terms of Service'),
+        content: SingleChildScrollView(
+          child: Text(_termsOfServiceText),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String get _privacyPolicyText => '''
+PRIVACY POLICY
+
+Last updated: ${DateTime.now().year}
+
+1. INFORMATION WE COLLECT
+We collect information that you provide directly to us, such as when you create an account, make a purchase, or contact us for support.
+
+2. HOW WE USE YOUR INFORMATION
+- To provide and maintain our service
+- To notify you about changes to our service
+- To provide customer support
+- To gather analysis or valuable information to improve our service
+- To monitor the usage of our service
+- To detect, prevent and address technical issues
+
+3. DATA STORAGE
+We store your data locally on your device. Some data may be synced with cloud services for backup purposes.
+
+4. THIRD-PARTY SERVICES
+Our app uses third-party services that may collect information used to identify you, including:
+- Google Mobile Ads
+- In-App Purchase services
+
+5. SECURITY
+We value your trust in providing us your Personal Information, thus we strive to use commercially acceptable means of protecting it.
+
+6. CONTACT US
+If you have any questions about this Privacy Policy, please contact us at deverloper.codeink.playconsole@gmail.com
+''';
+
+  static String get _termsOfServiceText => '''
+TERMS OF SERVICE
+
+Last updated: ${DateTime.now().year}
+
+1. ACCEPTANCE OF TERMS
+By accessing and using MovieWalls, you accept and agree to be bound by the terms and provision of this agreement.
+
+2. USE LICENSE
+Permission is granted to temporarily download one copy of the materials on MovieWalls for personal, non-commercial transitory viewing only.
+
+3. DISCLAIMER
+The materials on MovieWalls are provided on an 'as is' basis. MovieWalls makes no warranties, expressed or implied, and hereby disclaims and negates all other warranties.
+
+4. LIMITATIONS
+In no event shall MovieWalls or its suppliers be liable for any damages (including, without limitation, damages for loss of data or profit) arising out of the use or inability to use the materials on MovieWalls.
+
+5. IN-APP PURCHASES
+In-app purchases are processed by the respective app store (Google Play or App Store). All sales are final unless required by law.
+
+6. SUBSCRIPTION TERMS
+- Subscriptions auto-renew unless cancelled
+- You can cancel anytime through your app store account
+- No refunds for partial subscription periods
+
+7. CONTENT
+All movie poster and backdrop images are provided for personal use only. Redistribution or commercial use is prohibited.
+
+8. MODIFICATIONS
+MovieWalls may revise these terms at any time without notice. By using this app, you agree to be bound by the current version of these terms.
+
+9. CONTACT INFORMATION
+For questions about these Terms, please contact us at deverloper.codeink.playconsole@gmail.com
+''';
 }
 

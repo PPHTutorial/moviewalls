@@ -29,7 +29,14 @@ final searchResultsProvider = FutureProvider.family<List<Movie>, String>((ref, q
     final scraper = ScrapingService.instance;
     final response = await Dio().get<String>(searchUrl, options: Options(headers: {'Accept': 'text/html, */*; q=0.01'}));
     final models = scraper.extractSearchResultsFromHtml(response.data ?? '');
-    return models.map((m) => m.toEntity()).toList();
+    final movies = models.map((m) => m.toEntity()).toList();
+    // Dedupe by id
+    final seen = <int>{};
+    final deduped = <Movie>[];
+    for (final m in movies) {
+      if (seen.add(m.id)) deduped.add(m);
+    }
+    return deduped;
   } catch (e) {
     throw Exception('Failed to search: $e');
   }
@@ -60,7 +67,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     _scrollController.addListener(_onScroll);
     _loadDiscover(reset: true);
   }
-
+  
   @override
   void dispose() {
     _searchController.dispose();
@@ -118,10 +125,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
         },
         body: bodyParams,
-        post: true,
+        post: false,
         uniqueComposite: 'discover_${sortBy}',
       );
       final items = movies.map((m) => m.toEntity()).toList();
+
+      //print('items: ${items.map((m) => m.title).join(', ')}');
       setState(() {
         _discoverItems = [..._discoverItems, ...items];
         _hasMore = items.length >= 20;
@@ -155,6 +164,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.darkBackground,
         elevation: 0,
+        toolbarHeight: 75,
+        titleSpacing: 0,
         title: _buildSearchBar(),
         actions: [
           if (searchQuery.isEmpty)
@@ -190,9 +201,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   Widget _buildSearchBar() {
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: 8.w),
+      height: 45.h,
+      padding: EdgeInsets.symmetric(horizontal: 4.w),
       decoration: BoxDecoration(
-        color: AppColors.darkSurface,
+        //color: AppColors.darkSurface,
         borderRadius: BorderRadius.circular(AppDimensions.radiusMedium),
       ),
       child: TextField(
@@ -229,6 +241,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         onRetry: () => _loadDiscover(reset: true),
       );
     }
+    if (_isLoadingDiscover && _discoverItems.isEmpty) {
+      return const Center(child: LoadingIndicator());
+    }
+    if (!_isLoadingDiscover && _discoverItems.isEmpty) {
+      return const EmptyStateWidget(
+        message: 'No movies found.\nTry adjusting filters or search.',
+        icon: Icons.movie_outlined,
+      );
+    }
     return NotificationListener<OverscrollIndicatorNotification>(
       onNotification: (_) {
         return false;
@@ -244,6 +265,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             SizedBox(height: AppDimensions.space16),
             const Center(child: LoadingIndicator()),
           ],
+          SizedBox(height: AppDimensions.space24),
+          // Middle Banner Ad
+          const AdBannerWidget(),
           SizedBox(height: AppDimensions.space16),
         ],
       ),
@@ -264,35 +288,39 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         const AdBannerWidget(),
         SizedBox(height: AppDimensions.space16),
         _buildGrid(movies),
+        SizedBox(height: AppDimensions.space24),
+        // Bottom Banner Ad
+        const AdBannerWidget(),
+        SizedBox(height: AppDimensions.space16),
       ],
     );
   }
 
   Widget _buildGrid(List<Movie> movies) {
     return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        mainAxisSpacing: AppDimensions.gridSpacing,
-        crossAxisSpacing: AppDimensions.gridSpacing,
-        childAspectRatio: AppDimensions.posterAspectRatio,
-      ),
-      itemCount: movies.length,
-      itemBuilder: (context, index) {
-        final movie = movies[index];
-        return WallpaperGridItem(
-          movie: movie,
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => MovieDetailScreen(movie: movie),
-              ),
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            mainAxisSpacing: AppDimensions.gridSpacing,
+            crossAxisSpacing: AppDimensions.gridSpacing,
+            childAspectRatio: AppDimensions.posterAspectRatio,
+          ),
+          itemCount: movies.length,
+          itemBuilder: (context, index) {
+            final movie = movies[index];
+            return WallpaperGridItem(
+              movie: movie,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => MovieDetailScreen(movie: movie),
+                  ),
+                );
+              },
             );
           },
-        );
-      },
     );
   }
 
@@ -322,10 +350,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.textSecondary.withOpacity(0.5), borderRadius: BorderRadius.circular(2))),),
+                      SizedBox(height: AppDimensions.space12),
                       Text('Filters', style: AppTextStyles.sectionTitle),
                       SizedBox(height: AppDimensions.space12),
-                      // Sort
-                      DropdownButton<String>(
+                      _FilterCard(child: DropdownButton<String>(
                         value: localSort,
                         items: const [
                           DropdownMenuItem(value: 'popularity.desc', child: Text('Popularity ↓')),
@@ -335,10 +364,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                         ],
                         onChanged: (v) => setModal(() => localSort = v ?? localSort),
                         isExpanded: true,
-                      ),
+                        style: AppTextStyles.bodyMedium,
+                        dropdownColor: AppColors.darkSurface,
+                        icon: Icon(Icons.arrow_drop_down, color: AppColors.textSecondary),
+                        iconSize: 24,
+                        underline: Container(),
+                        borderRadius: BorderRadius.circular(8),
+                      )),
                       SizedBox(height: AppDimensions.space12),
-                      // Region
-                      DropdownButton<String>(
+                      _FilterCard(child: DropdownButton<String>(
                         value: localRegion.isEmpty ? '' : localRegion,
                         items: const [
                           DropdownMenuItem(value: '', child: Text('Any Region')),
@@ -346,19 +380,36 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                           DropdownMenuItem(value: 'GB', child: Text('UK')),
                           DropdownMenuItem(value: 'GH', child: Text('Ghana')),
                           DropdownMenuItem(value: 'IN', child: Text('India')),
+                          DropdownMenuItem(value: 'ZA', child: Text('South Africa')),
+                          DropdownMenuItem(value: 'NG', child: Text('Nigeria')),
+                          DropdownMenuItem(value: 'KE', child: Text('Kenya')),
+                          DropdownMenuItem(value: 'ZA', child: Text('Zambia')),
+                          DropdownMenuItem(value: 'FR', child: Text('France')),
+                          DropdownMenuItem(value: 'DE', child: Text('Germany')),
+                          DropdownMenuItem(value: 'IT', child: Text('Italy')),
+                          DropdownMenuItem(value: 'ES', child: Text('Spain')),
+                          DropdownMenuItem(value: 'NL', child: Text('Netherlands')),
+                          DropdownMenuItem(value: 'BE', child: Text('Belgium')),
+                          DropdownMenuItem(value: 'CH', child: Text('Switzerland')),
+                          DropdownMenuItem(value: 'AT', child: Text('Austria')),
+                          DropdownMenuItem(value: 'SE', child: Text('Sweden')),
                         ],
                         onChanged: (v) => setModal(() => localRegion = v ?? localRegion),
                         isExpanded: true,
-                      ),
+                        style: AppTextStyles.bodyMedium,
+                        dropdownColor: AppColors.darkSurface,
+                        icon: Icon(Icons.arrow_drop_down, color: AppColors.textSecondary),
+                        iconSize: 24,
+                        underline: Container(),
+                        borderRadius: BorderRadius.circular(8),
+                      )),
                       SizedBox(height: AppDimensions.space12),
-                      // Genres
-                      TextField(
+                      _FilterCard(child: TextField(
                         controller: TextEditingController(text: localGenres),
-                        decoration: const InputDecoration(hintText: 'Genres (comma-separated IDs)'),
+                        decoration: InputDecoration(hintText: 'Genres (comma-separated IDs)', filled: true, fillColor: AppColors.darkBackground, border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: AppColors.textSecondary.withOpacity(0.2)))) ,
                         onChanged: (v) => localGenres = v.trim(),
-                      ),
+                      )),
                       SizedBox(height: AppDimensions.space12),
-                      // Dates
                       Row(
                         children: [
                           Expanded(
@@ -435,6 +486,23 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           ),
         );
       },
+    );
+  }
+}
+
+class _FilterCard extends StatelessWidget {
+  final Widget child;
+  const _FilterCard({required this.child});
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.darkBackground,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.textSecondary.withOpacity(0.15)),
+      ),
+      child: child,
     );
   }
 }

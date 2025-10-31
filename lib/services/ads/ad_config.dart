@@ -23,6 +23,9 @@ class AdConfig {
   static const String _prodRewardedAdUnitIdAndroid = 'ca-app-pub-9043208558525567/5502478278';
   static const String _prodRewardedAdUnitIdIOS = 'ca-app-pub-9043208558525567/5502478278';
   
+  static const String _testRewardedInterstitialAdUnitIdAndroid = 'ca-app-pub-3940256099942544/5354046379';
+  static const String _testRewardedInterstitialAdUnitIdIOS = 'ca-app-pub-3940256099942544/6978759866';
+  
   static const String _prodRewardedInterstitialAdUnitIdAndroid = 'ca-app-pub-9043208558525567/3067886625';
   static const String _prodRewardedInterstitialAdUnitIdIOS = 'ca-app-pub-9043208558525567/3067886625';
   
@@ -65,6 +68,19 @@ class AdConfig {
       return Platform.isAndroid
           ? _prodRewardedAdUnitIdAndroid
           : _prodRewardedAdUnitIdIOS;
+    }
+  }
+  
+  /// Get rewarded interstitial ad unit ID
+  static String getRewardedInterstitialAdUnitId() {
+    if (_useTestAds) {
+      return Platform.isAndroid
+          ? _testRewardedInterstitialAdUnitIdAndroid
+          : _testRewardedInterstitialAdUnitIdIOS;
+    } else {
+      return Platform.isAndroid
+          ? _prodRewardedInterstitialAdUnitIdAndroid
+          : _prodRewardedInterstitialAdUnitIdIOS;
     }
   }
   

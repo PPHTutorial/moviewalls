@@ -44,17 +44,24 @@ android {
     signingConfigs {
         create("release") {
             if (keystorePropertiesFile.exists()) {
-                keyAlias = keystoreProperties["keyAlias"] as String?
-                keyPassword = keystoreProperties["keyPassword"] as String?
-                storeFile = keystoreProperties["storeFile"]?.let { file(it) }
-                storePassword = keystoreProperties["storePassword"] as String?
+                val storeFile = keystoreProperties["storeFile"]?.let { file(it) }
+                if (storeFile != null && storeFile.exists()) {
+                    keyAlias = keystoreProperties["keyAlias"] as String?
+                    keyPassword = keystoreProperties["keyPassword"] as String?
+                    this.storeFile = storeFile
+                    storePassword = keystoreProperties["storePassword"] as String?
+                }
             }
         }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("release")
+            // Only use signing config if keystore exists
+            val releaseSigning = signingConfigs.findByName("release")
+            if (releaseSigning != null && releaseSigning.storeFile != null && releaseSigning.storeFile!!.exists()) {
+                signingConfig = releaseSigning
+            }
             isMinifyEnabled = true
             isShrinkResources = false // Disable resource shrinking initially
             proguardFiles(

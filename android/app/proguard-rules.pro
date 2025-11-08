@@ -155,3 +155,84 @@
     native <methods>;
 }
 
+# Flutter InAppWebView
+-keep class com.pichillilorenzo.flutter_inappwebview.** { *; }
+-dontwarn com.pichillilorenzo.flutter_inappwebview.**
+
+# Google Sign In
+-keep class com.google.android.gms.auth.** { *; }
+-keep class com.google.android.gms.common.** { *; }
+-dontwarn com.google.android.gms.**
+-keep class com.google.api.client.** { *; }
+-keep class com.google.api.client.googleapis.** { *; }
+
+# Async Wallpaper
+-keep class com.codenameakshay.async_wallpaper.** { *; }
+-dontwarn com.codenameakshay.async_wallpaper.**
+
+# Flutter Wallpaper Manager
+-keep class com.pk.wallpapermanager.flutter_wallpaper_manager.** { *; }
+-dontwarn com.pk.wallpapermanager.flutter_wallpaper_manager.**
+
+# WebView
+-keep class android.webkit.** { *; }
+-dontwarn android.webkit.**
+
+# Keep all Flutter plugin classes
+-keep class io.flutter.plugins.** { *; }
+-keep class dev.fluttercommunity.** { *; }
+
+# Keep all application classes
+-keep class com.codeink.stsl.movie_posters.** { *; }
+
+# Keep enum classes
+-keepclassmembers enum * {
+    public static **[] values();
+    public static ** valueOf(java.lang.String);
+}
+
+# Keep View constructors
+-keepclasseswithmembers class * {
+    public <init>(android.content.Context, android.util.AttributeSet);
+}
+
+-keepclasseswithmembers class * {
+    public <init>(android.content.Context, android.util.AttributeSet, int);
+}
+
+# Keep custom exceptions
+-keep public class * extends java.lang.Exception
+
+# Keep native method names
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
+
+# Keep JavaScript interface
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
+
+# Suppress warnings for missing classes
+-dontwarn javax.annotation.**
+-dontwarn javax.inject.**
+-dontwarn sun.misc.Unsafe
+-dontwarn com.google.j2objc.annotations.**
+-dontwarn org.conscrypt.**
+
+# Keep reflection-based code
+-keepattributes RuntimeVisibleAnnotations
+-keepattributes RuntimeVisibleParameterAnnotations
+-keepattributes AnnotationDefault
+
+# Keep R8 from removing classes that are only referenced via reflection
+-keepclassmembers class * {
+    @androidx.annotation.Keep <methods>;
+}
+
+# Keep all classes with @Keep annotation
+-keep @androidx.annotation.Keep class *
+-keepclassmembers class * {
+    @androidx.annotation.Keep *;
+}
+

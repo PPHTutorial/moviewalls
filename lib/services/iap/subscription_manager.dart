@@ -65,11 +65,10 @@ class SubscriptionManager {
         // Set expiry based on product type
         if (productId == AppConstants.iapMonthly) {
           _subscriptionExpiry = DateTime.now().add(const Duration(days: 30));
+        } else if (productId == AppConstants.iapSixMonths) {
+          _subscriptionExpiry = DateTime.now().add(const Duration(days: 180)); // 6 months
         } else if (productId == AppConstants.iapYearly) {
-          _subscriptionExpiry = DateTime.now().add(const Duration(days: 365));
-        } else if (productId == AppConstants.iapLifetime) {
-          // Lifetime subscription - set expiry to far future
-          _subscriptionExpiry = DateTime.now().add(const Duration(days: 36500)); // 100 years
+          _subscriptionExpiry = DateTime.now().add(const Duration(days: 365)); // 1 year
         }
         
         if (_subscriptionExpiry != null) {
@@ -111,7 +110,7 @@ class SubscriptionManager {
   bool get isSubscriptionActive {
     if (!_isProUser) return false;
     
-    if (_subscriptionExpiry == null) return true; // Lifetime
+    if (_subscriptionExpiry == null) return false;
     
     return DateTime.now().isBefore(_subscriptionExpiry!);
   }
@@ -131,10 +130,10 @@ class SubscriptionManager {
     switch (_activeProductId) {
       case AppConstants.iapMonthly:
         return 'Pro Monthly';
+      case AppConstants.iapSixMonths:
+        return 'Pro 6 Months';
       case AppConstants.iapYearly:
         return 'Pro Yearly';
-      case AppConstants.iapLifetime:
-        return 'Pro Lifetime';
       default:
         return 'Pro';
     }

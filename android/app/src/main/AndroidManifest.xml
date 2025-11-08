@@ -10,7 +10,7 @@
     
     <!-- AdMob Configuration -->
     <application
-        android:label="MovieWalls"
+        android:label="Movie Posters - Wallpapers"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <!-- AdMob Application ID -->

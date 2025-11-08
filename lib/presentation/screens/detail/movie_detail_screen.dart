@@ -8,6 +8,7 @@ import '../../../domain/entities/movie.dart';
 import '../../../services/storage/download_service.dart';
 import '../../../services/storage/wallpaper_service.dart';
 import '../../../services/ads/ad_service.dart';
+import '../../../services/image_processing/watermark_service.dart';
 // Data fetching removed during rebuild
 import '../../../services/permissions/permission_service.dart';
 import '../../providers/favorites_provider.dart';
@@ -15,12 +16,12 @@ import '../../providers/subscription_provider.dart';
 import '../../widgets/cached_image_widget.dart';
 import '../../widgets/loading_indicator.dart';
 import '../../widgets/download_progress_dialog.dart';
+import '../../widgets/ad_banner_widget.dart';
 import 'package:share_plus/share_plus.dart';
 import 'dart:async';
 import '../../../services/scraping/scraping_service.dart';
 import '../../../core/utils/logger.dart';
 import '../../../core/constants/tmdb_endpoints.dart';
-import '../../../core/constants/app_constants.dart';
 
 /// Complete movie detail screen with posters and backdrops gallery
 class MovieDetailScreen extends ConsumerStatefulWidget {
@@ -50,12 +51,19 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
   String? _certification;
   List<String> _genres = [];
 
-
   @override
   void initState() {
     super.initState();
     _fetchAllImages(); // Stubbed during logic rebuild
     _fetchMovieDetails(); // Stubbed during logic rebuild
+
+    // Show interstitial ad when detail screen opens (after first frame)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final isPro = ref.read(isProUserProvider);
+      if (!isPro) {
+        AdService.instance.showInterstitialAdOnNavigation();
+      }
+    });
   }
 
   Future<void> _fetchMovieDetails() async {
@@ -67,7 +75,7 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
         id: widget.movie.id,
       );
       if (!mounted) return;
-    setState(() {
+      setState(() {
         _overview = map['overview'] as String?;
         _tagline = map['tagline'] as String?;
         _runtime = map['runtime'] as String?;
@@ -179,8 +187,8 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
                         widget.movie.backdropPath!,
                         size: BackdropSize.w1280,
                       ),
-                    fit: BoxFit.cover,
-                  )
+                      fit: BoxFit.cover,
+                    )
                   else if (widget.movie.hasPoster)
                     CachedImageWidget(
                       imageUrl: TMDBEndpoints.posterUrl(
@@ -208,28 +216,28 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
                     left: AppDimensions.space20,
                     right: AppDimensions.space20,
                     bottom: AppDimensions.space16,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        widget.movie.title,
-                        style: AppTextStyles.headline3,
+                      children: [
+                        Text(
+                          widget.movie.title,
+                          style: AppTextStyles.headline3,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                      ),
-                      SizedBox(height: AppDimensions.space8),
-                      Row(
-                            children: [
-                              Icon(Icons.star,
-                                  size: 18.w, color: AppColors.ratingGold),
-                              SizedBox(width: 4.w),
+                        ),
+                        SizedBox(height: AppDimensions.space8),
+                        Row(
+                          children: [
+                            Icon(Icons.star,
+                                size: 18.w, color: AppColors.ratingGold),
+                            SizedBox(width: 4.w),
                             Text(widget.movie.formattedRating,
                                 style: AppTextStyles.bodyLarge
                                     .copyWith(fontWeight: FontWeight.w600)),
                           ],
                         ),
-                if (_overview != null && _overview!.isNotEmpty) ...[
+                        if (_overview != null && _overview!.isNotEmpty) ...[
                           SizedBox(height: AppDimensions.space12),
                           Text(
                             _overview!,
@@ -250,9 +258,9 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
                             ),
                           ),
                         ],
-                        ],
-                      ),
+                      ],
                     ),
+                  ),
                 ],
               ),
             ),
@@ -273,25 +281,36 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
                   horizontal: AppDimensions.space20,
                   //vertical: AppDimensions.space8
                 ),
-                  child: Container(
+                child: Container(
                   height: 80.h,
-                    padding: EdgeInsets.all(4.w),
-                    decoration: BoxDecoration(
-                      color: AppColors.darkSurface,
-                      borderRadius:
-                          BorderRadius.circular(AppDimensions.radiusMedium),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                            child: _buildTabButton(
-                                'Posters', 1, Icons.aspect_ratio)),
-                        Expanded(
+                  padding: EdgeInsets.all(4.w),
+                  decoration: BoxDecoration(
+                    color: AppColors.darkSurface,
+                    borderRadius:
+                        BorderRadius.circular(AppDimensions.radiusMedium),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                          child: _buildTabButton(
+                              'Posters', 1, Icons.aspect_ratio)),
+                      Expanded(
                           child: _buildTabButton('Backdrops', 0, Icons.photo)),
-                      ],
-                    ),
+                    ],
                   ),
                 ),
+              ),
+            ),
+          ),
+
+          // Top Banner Ad (after tabs)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: AppDimensions.space20,
+                vertical: AppDimensions.space12,
+              ),
+              child: const AdBannerWidget(),
             ),
           ),
 
@@ -307,6 +326,15 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
                   padding:
                       EdgeInsets.symmetric(horizontal: AppDimensions.space20),
                   child: _buildGallery(),
+                ),
+
+                // Bottom Banner Ad (after gallery)
+                Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: AppDimensions.space20,
+                    vertical: AppDimensions.space12,
+                  ),
+                  child: const AdBannerWidget(),
                 ),
 
                 SizedBox(height: 100.h),
@@ -413,18 +441,26 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
               : TMDBEndpoints.posterUrl(rawPath, size: PosterSize.w780);
 
           return GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => _ImageFullScreenView(
-                    imageUrl: imageUrl,
-                    rawPath: rawPath,
-                    isBackdrop: isBackdrop,
-                    movieTitle: widget.movie.title,
+            onTap: () async {
+              // Show interstitial ad before opening full screen image (for free users)
+              final isPro = ref.read(isProUserProvider);
+              if (!isPro) {
+                await AdService.instance.showInterstitialAdOnNavigation();
+              }
+
+              if (mounted) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => _ImageFullScreenView(
+                      imageUrl: imageUrl,
+                      rawPath: rawPath,
+                      isBackdrop: isBackdrop,
+                      movieTitle: widget.movie.title,
+                    ),
                   ),
-                ),
-              );
+                );
+              }
             },
             child: ClipRRect(
               borderRadius: BorderRadius.circular(AppDimensions.radiusMedium),
@@ -448,31 +484,31 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
     if (!isPro) {
       if (mounted) {
         final shouldWatchAd = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
+          context: context,
+          builder: (context) => AlertDialog(
             title: const Text('Pro Feature'),
-          content: const Text(
+            content: const Text(
               'Download all images is a Pro feature. You can either upgrade to Pro or watch a video ad to unlock this feature for this session.',
             ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, true),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
                 child: const Text('Watch Ad'),
-            ),
-            ElevatedButton(
-              onPressed: () {
+              ),
+              ElevatedButton(
+                onPressed: () {
                   Navigator.pop(context, false);
-                Navigator.pushNamed(context, '/pro-upgrade');
-              },
-              child: const Text('Upgrade to Pro'),
-            ),
-          ],
-        ),
-      );
+                  Navigator.pushNamed(context, '/pro-upgrade');
+                },
+                child: const Text('Upgrade to Pro'),
+              ),
+            ],
+          ),
+        );
 
         if (shouldWatchAd == true) {
           // Show rewarded interstitial ad
@@ -481,19 +517,21 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
               // Allow download after watching ad
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                  content: Text('Feature unlocked! You can now download all images.'),
+                  content: Text(
+                      'Feature unlocked! You can now download all images.'),
                   backgroundColor: Colors.green,
                 ),
               );
             },
           );
-          
+
           // Continue with download after ad
           final allImages = <String>[];
           allImages.addAll(_allBackdrops);
           allImages.addAll(_allPosters);
           if (allImages.isNotEmpty) {
-            await _showDownloadAllConfirmationAndDownload(context, allImages, false);
+            await _showDownloadAllConfirmationAndDownload(
+                context, allImages, false);
           }
         }
       }
@@ -524,8 +562,8 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
   ) async {
     // Show confirmation dialog
     final shouldContinue = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
+      context: context,
+      builder: (context) => AlertDialog(
         title: const Text('Download All Images?'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -544,18 +582,18 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
             ),
           ],
         ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
           ElevatedButton(
-              onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.pop(context, true),
             child: const Text('Continue Download'),
-            ),
-          ],
-        ),
-      );
+          ),
+        ],
+      ),
+    );
 
     if (shouldContinue != true) return;
 
@@ -565,46 +603,48 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
   Future<void> _downloadAllImages(List<String> imagePaths) async {
     if (!mounted) return;
 
-      await PermissionService.instance.requestAllPermissions();
-      if (!await PermissionService.instance.hasStoragePermission()) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Storage permission denied')),
-          );
-        }
-        return;
+    await PermissionService.instance.requestAllPermissions();
+    if (!await PermissionService.instance.hasStoragePermission()) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Storage permission denied')),
+        );
       }
+      return;
+    }
 
     final isProUser = ref.read(isProUserProvider);
-    
+
     // Build URLs with original quality
     final imageUrls = <String>[];
     final imageNames = <String>[];
-    
+
     for (final path in imagePaths) {
       // Determine if it's a backdrop or poster based on which list it's in
       final isBackdrop = _allBackdrops.contains(path);
       final url = isBackdrop
           ? TMDBEndpoints.backdropUrl(path, size: BackdropSize.original)
           : TMDBEndpoints.posterUrl(path, size: PosterSize.original);
-      
+
       // Skip if already downloaded
       if (DownloadService.instance.isAlreadyDownloaded(url)) {
         continue;
       }
-      
+
       imageUrls.add(url);
-      imageNames.add(isBackdrop ? 'Backdrop ${_allBackdrops.indexOf(path) + 1}' : 'Poster ${_allPosters.indexOf(path) + 1}');
+      imageNames.add(isBackdrop
+          ? 'Backdrop ${_allBackdrops.indexOf(path) + 1}'
+          : 'Poster ${_allPosters.indexOf(path) + 1}');
     }
 
     if (imageUrls.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('All images already downloaded!')),
-          );
-        }
-        return;
+        );
       }
+      return;
+    }
 
     // Create progress streams
     final progressController = StreamController<double>.broadcast();
@@ -624,21 +664,21 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
 
     try {
       int completed = 0;
-      
+
       for (int i = 0; i < imageUrls.length; i++) {
         currentItemController.add(imageNames[i]);
-        
+
         try {
-      await DownloadService.instance.downloadWallpaper(
+          await DownloadService.instance.downloadWallpaper(
             imageUrl: imageUrls[i],
-        movieTitle: widget.movie.title,
-        isPro: isProUser,
+            movieTitle: widget.movie.title,
+            isPro: isProUser,
             onProgress: (progress) {
               final overallProgress = (i + progress) / imageUrls.length;
               progressController.add(overallProgress);
             },
           );
-          
+
           completed++;
           completedController.add(completed);
           progressController.add((i + 1) / imageUrls.length);
@@ -651,7 +691,8 @@ class _MovieDetailScreenState extends ConsumerState<MovieDetailScreen> {
         Navigator.of(context).pop(); // Close progress dialog
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Successfully downloaded $completed/${imageUrls.length} images!'),
+            content: Text(
+                'Successfully downloaded $completed/${imageUrls.length} images!'),
             backgroundColor: Colors.green,
           ),
         );
@@ -1002,7 +1043,8 @@ class _ImageFullScreenView extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<_ImageFullScreenView> createState() => _ImageFullScreenViewState();
+  ConsumerState<_ImageFullScreenView> createState() =>
+      _ImageFullScreenViewState();
 }
 
 class _ImageFullScreenViewState extends ConsumerState<_ImageFullScreenView> {
@@ -1023,15 +1065,19 @@ class _ImageFullScreenViewState extends ConsumerState<_ImageFullScreenView> {
         return;
       }
 
+      // Get actual Pro status
+      final isPro = ref.read(isProUserProvider);
+
       // Use TMDB original size URL directly
       final downloadUrl = widget.isBackdrop
-          ? TMDBEndpoints.backdropUrl(widget.rawPath, size: BackdropSize.original)
+          ? TMDBEndpoints.backdropUrl(widget.rawPath,
+              size: BackdropSize.original)
           : TMDBEndpoints.posterUrl(widget.rawPath, size: PosterSize.original);
 
       await DownloadService.instance.downloadWallpaper(
         imageUrl: downloadUrl,
         movieTitle: widget.movieTitle,
-        isPro: false,
+        isPro: isPro,
       );
 
       await AdService.instance.showInterstitialAfterDownload();
@@ -1054,7 +1100,6 @@ class _ImageFullScreenViewState extends ConsumerState<_ImageFullScreenView> {
     }
   }
 
-
   Future<void> _setAsWallpaper() async {
     setState(() => _isSettingWallpaper = true);
 
@@ -1072,24 +1117,25 @@ class _ImageFullScreenViewState extends ConsumerState<_ImageFullScreenView> {
       // Use TMDB original size URL for wallpaper
       // Use original quality URL
       final wallpaperUrl = widget.isBackdrop
-          ? TMDBEndpoints.backdropUrl(widget.rawPath, size: BackdropSize.original)
+          ? TMDBEndpoints.backdropUrl(widget.rawPath,
+              size: BackdropSize.original)
           : TMDBEndpoints.posterUrl(widget.rawPath, size: PosterSize.original);
 
       // Set wallpaper directly from URL (uses original quality)
       final success = await WallpaperService.instance.setWallpaperFromUrl(
         imageUrl: wallpaperUrl,
-          location: WallpaperLocation.both,
+        location: WallpaperLocation.both,
+      );
+
+      await AdService.instance.showInterstitialAfterDownload();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text(success
+                  ? 'Wallpaper set successfully!'
+                  : 'Failed to set wallpaper')),
         );
-
-        await AdService.instance.showInterstitialAfterDownload();
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text(success
-                    ? 'Wallpaper set successfully!'
-                    : 'Failed to set wallpaper')),
-          );
       }
     } catch (e) {
       if (mounted) {
@@ -1107,7 +1153,7 @@ class _ImageFullScreenViewState extends ConsumerState<_ImageFullScreenView> {
   @override
   Widget build(BuildContext context) {
     final isPro = ref.watch(isProUserProvider);
-    
+
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
@@ -1118,35 +1164,16 @@ class _ImageFullScreenViewState extends ConsumerState<_ImageFullScreenView> {
       body: Stack(
         children: [
           InteractiveViewer(
-        child: CachedImageWidget(
-          imageUrl: widget.imageUrl,
-          fit: BoxFit.contain,
-        ),
+            child: CachedImageWidget(
+              imageUrl: widget.imageUrl,
+              fit: BoxFit.contain,
+            ),
           ),
           // Watermark overlay for free users
           if (!isPro)
-            Center(
-              child: IgnorePointer(
-                child: Container(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: 16.w,
-                    vertical: 8.h,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.4),
-                    borderRadius: BorderRadius.circular(8.w),
-                  ),
-                  child: Text(
-                    AppConstants.watermarkText,
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(AppConstants.watermarkOpacity),
-                      fontSize: 24.sp,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                ),
-              ),
+            WatermarkService.instance.buildWatermarkPreview(
+              size: 0.2, // 20% size
+              opacity: 0.4, // 40% opacity
             ),
         ],
       ),

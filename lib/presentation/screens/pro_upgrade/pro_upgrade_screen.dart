@@ -15,7 +15,7 @@ class ProUpgradeScreen extends StatefulWidget {
 }
 
 class _ProUpgradeScreenState extends State<ProUpgradeScreen> {
-  int _selectedPlanIndex = 1; // Default to yearly (best value)
+  int _selectedPlanIndex = 1; // Default to 6 months (best value)
 
   final List<Map<String, dynamic>> _plans = [
     {
@@ -26,19 +26,20 @@ class _ProUpgradeScreenState extends State<ProUpgradeScreen> {
       'badge': null,
     },
     {
-      'id': AppConstants.iapYearly,
-      'name': 'Yearly',
+      'id': AppConstants.iapSixMonths,
+      'name': '6 Months',
       'price': '\$99.99',
-      'period': '/year',
-      'subtext': '\$8.33/month',
+      'period': '/6 months',
+      'subtext': '\$16.67/month',
       'badge': 'SAVE 33%',
       'badgeColor': AppColors.success,
     },
     {
-      'id': AppConstants.iapLifetime,
-      'name': 'Lifetime',
-      'price': '\$254.99',
-      'period': 'one-time',
+      'id': AppConstants.iapYearly,
+      'name': 'Yearly',
+      'price': '\$299.99',
+      'period': '/year',
+      'subtext': '\$25.00/month',
       'badge': 'BEST VALUE',
       'badgeColor': AppColors.goldColor,
     },

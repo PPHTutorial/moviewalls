@@ -166,7 +166,7 @@ class MovieScraperSource {
     final models = await _scraper.fetchAndCacheMoviesHtmlPaged(
       endpointKey: key,
       url: url,
-      page: 1,
+      page: page,
       extraHeaders: {
         'x-requested-with': 'XMLHttpRequest',
         'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
@@ -177,6 +177,121 @@ class MovieScraperSource {
       forceNetwork: CachePolicyService.instance.consumeForceNetwork(),
     );
     return models.map((m) => m.toEntity()).toList().sublist(3);
+  }
+
+  /// 5b. Discover movies via /movie endpoint with query parameters (for search screen)
+  Future<List<Movie>> getDiscoverViaMovieUrl({
+    int page = 1,
+    String sortBy = 'popularity.desc',
+    String? region,
+    String watchRegion = '',
+    String? releaseDateLte,
+    String? releaseDateGte,
+    Map<String, String>? customParams,
+  }) async {
+    // Create query parameters from body structure
+    final DateFormat fmt = DateFormat('yyyy-MM-dd');
+    final today = fmt.format(DateTime.now());
+    final defaultLte = releaseDateLte ?? today;
+
+    final queryParams = <String, String>{
+      'air_date.gte': '',
+      'air_date.lte': '',
+      'certification': '',
+      'certification_country': region ?? 'GH',
+      'debug': '',
+      'first_air_date.gte': '',
+      'first_air_date.lte': '',
+      'page': page.toString(),
+      'primary_release_date.gte': '',
+      'primary_release_date.lte': '',
+      'region': region ?? '',
+      'release_date.gte': releaseDateGte ?? '',
+      'release_date.lte': defaultLte,
+      'show_me': 'everything',
+      'sort_by': sortBy,
+      'vote_average.gte': '0',
+      'vote_average.lte': '10',
+      'vote_count.gte': '0',
+      'watch_region': watchRegion,
+      'with_genres': '',
+      'with_keywords': '',
+      'with_networks': '',
+      'with_origin_country': '',
+      'with_original_language': '',
+      'with_watch_monetization_types': '',
+      'with_watch_providers': '',
+      'with_release_type': '',
+      'with_runtime.gte': '0',
+      'with_runtime.lte': '400',
+    };
+
+    if (customParams != null) queryParams.addAll(customParams);
+
+    // Build URL with query parameters
+    final queryString = queryParams.entries
+        .where((e) => e.value.isNotEmpty) // Only include non-empty params
+        .map((e) => '${e.key}=${Uri.encodeComponent(e.value)}')
+        .join('&');
+
+    final url = 'https://www.themoviedb.org/movie?$queryString';
+    // endpointKey should NOT include page number - it's used for the cache box name
+    // The page number is handled internally by fetchAndCacheMoviesHtmlPaged
+    final endpointKey = 'discover_movie_${sortBy}_${watchRegion}';
+    final uniqueComposite = endpointKey; // Same for all pages of this query
+
+    print('🌐 [getDiscoverViaMovieUrl] URL: $url');
+    print('🌐 [getDiscoverViaMovieUrl] Page: $page');
+    print('🌐 [getDiscoverViaMovieUrl] EndpointKey: $endpointKey');
+
+    // fetchAndCacheMoviesHtmlPaged returns ALL pages from 1 to page
+    // We need to extract only the items for the requested page
+    // Strategy: Calculate how many items were in previous pages, then extract only new ones
+
+    int previousItemsCount = 0;
+    if (page > 1) {
+      // Fetch pages 1 to (page-1) to get the count of previous items
+      final previousModels = await _scraper.fetchAndCacheMoviesHtmlPaged(
+        endpointKey: endpointKey,
+        url: url,
+        page: page - 1,
+        extraHeaders: {
+          'x-requested-with': 'XMLHttpRequest',
+        },
+        body: null,
+        post: false,
+        uniqueComposite: uniqueComposite,
+        forceNetwork: false, // Use cache if available
+      );
+      previousItemsCount = previousModels.length;
+      print(
+          '🌐 [getDiscoverViaMovieUrl] Previous pages (1-${page - 1}) have $previousItemsCount items');
+    }
+
+    // Now fetch all pages up to current page
+    final allModels = await _scraper.fetchAndCacheMoviesHtmlPaged(
+      endpointKey: endpointKey,
+      url: url,
+      page: page,
+      extraHeaders: {
+        'x-requested-with': 'XMLHttpRequest',
+      },
+      body: null,
+      post: false,
+      uniqueComposite: uniqueComposite,
+      forceNetwork: CachePolicyService.instance.consumeForceNetwork(),
+    );
+
+    // Extract only the new page's items (items beyond previousItemsCount)
+    final newModels = previousItemsCount < allModels.length
+        ? allModels.sublist(previousItemsCount)
+        : allModels; // If page 1, return all
+
+    final result = newModels.map((m) => m.toEntity()).toList();
+    print(
+        '🌐 [getDiscoverViaMovieUrl] Total models: ${allModels.length}, Previous: $previousItemsCount, New page items: ${result.length}');
+
+    return result;
   }
 
   /// 6. Upcoming - release dates must be dynamic by current date
@@ -219,7 +334,8 @@ class MovieScraperSource {
     final bodyStr = body.entries
         .map((e) => '${e.key}=${Uri.encodeComponent(e.value)}')
         .join('&');
-    final key = 'release_date.gte=$gte&release_date.lte=$lte&show_me=everything&sort_by=popularity.desc';
+    final key =
+        'release_date.gte=$gte&release_date.lte=$lte&show_me=everything&sort_by=popularity.desc';
     final url = 'https://www.themoviedb.org/movie?${key}';
     final models = await _scraper.fetchAndCacheMoviesHtmlPaged(
       endpointKey: '',
@@ -522,6 +638,7 @@ class DiscoverNotifier extends StateNotifier<DiscoverState> {
           isLoading: false,
           hasMoreData: movies.length >= 20,
           error: null);
+      print('loaded next page ${nextPage}');
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
     }
@@ -529,6 +646,154 @@ class DiscoverNotifier extends StateNotifier<DiscoverState> {
 
   Future<void> refresh() async {
     state = const DiscoverState();
+    await loadInitial();
+  }
+}
+
+// ---- Search/Discover Provider with Filters ----
+class SearchDiscoverState {
+  final List<Movie> items;
+  final int currentPage;
+  final bool isLoading;
+  final bool hasMoreData;
+  final String? error;
+  const SearchDiscoverState({
+    this.items = const [],
+    this.currentPage = 1,
+    this.isLoading = false,
+    this.hasMoreData = true,
+    this.error,
+  });
+  SearchDiscoverState copyWith({
+    List<Movie>? items,
+    int? currentPage,
+    bool? isLoading,
+    bool? hasMoreData,
+    String? error,
+  }) =>
+      SearchDiscoverState(
+        items: items ?? this.items,
+        currentPage: currentPage ?? this.currentPage,
+        isLoading: isLoading ?? this.isLoading,
+        hasMoreData: hasMoreData ?? this.hasMoreData,
+        error: error,
+      );
+}
+
+final searchDiscoverProvider = StateNotifierProvider.autoDispose<
+    SearchDiscoverNotifier, SearchDiscoverState>((ref) {
+  final scraper = ref.watch(movieScraperProvider);
+  return SearchDiscoverNotifier(scraper);
+});
+
+class SearchDiscoverNotifier extends StateNotifier<SearchDiscoverState> {
+  final MovieScraperSource _scraper;
+
+  // Filter parameters
+  String _sortBy = 'popularity.desc';
+  String _region = '';
+  String _watchRegion = '';
+  String? _releaseDateGte;
+  String? _releaseDateLte;
+  String _genres = '';
+
+  SearchDiscoverNotifier(this._scraper) : super(const SearchDiscoverState());
+
+  /// Update filters and reload
+  Future<void> updateFilters({
+    String? sortBy,
+    String? region,
+    String? watchRegion,
+    String? releaseDateGte,
+    String? releaseDateLte,
+    String? genres,
+    bool reset = true,
+  }) async {
+    if (sortBy != null) _sortBy = sortBy;
+    if (region != null) _region = region;
+    if (watchRegion != null) _watchRegion = watchRegion;
+    if (releaseDateGte != null)
+      _releaseDateGte = releaseDateGte.isEmpty ? null : releaseDateGte;
+    if (releaseDateLte != null)
+      _releaseDateLte = releaseDateLte.isEmpty ? null : releaseDateLte;
+    if (genres != null) _genres = genres;
+
+    if (reset) {
+      state = const SearchDiscoverState();
+      await loadInitial();
+    }
+  }
+
+  Future<void> loadInitial() async {
+    if (state.isLoading) return;
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      final customParams = <String, String>{};
+      if (_genres.isNotEmpty) {
+        customParams['with_genres'] = _genres;
+      }
+
+      final movies = await _scraper.getDiscoverViaMovieUrl(
+        page: 1,
+        sortBy: _sortBy,
+        region: _region.isEmpty ? null : _region,
+        watchRegion: _watchRegion,
+        releaseDateGte: _releaseDateGte,
+        releaseDateLte: _releaseDateLte,
+        customParams: customParams.isEmpty ? null : customParams,
+      );
+      state = state.copyWith(
+        items: movies,
+        currentPage: 1,
+        isLoading: false,
+        hasMoreData: movies.length >= 20,
+        error: null,
+      );
+      print('🔍 [SearchDiscover] Loaded initial page: ${movies.length} movies');
+    } catch (e) {
+      print('❌ [SearchDiscover] Error loading initial: $e');
+      state = state.copyWith(isLoading: false, error: e.toString());
+    }
+  }
+
+  Future<void> loadNextPage() async {
+    if (state.isLoading || !state.hasMoreData) return;
+    state = state.copyWith(isLoading: true);
+    try {
+      final nextPage = state.currentPage + 1;
+      final customParams = <String, String>{};
+      if (_genres.isNotEmpty) {
+        customParams['with_genres'] = _genres;
+      }
+
+      print('🔍 [SearchDiscover] Loading next page: $nextPage');
+      final movies = await _scraper.getDiscoverViaMovieUrl(
+        page: nextPage,
+        sortBy: _sortBy,
+        region: _region.isEmpty ? null : _region,
+        watchRegion: _watchRegion,
+        releaseDateGte: _releaseDateGte,
+        releaseDateLte: _releaseDateLte,
+        customParams: customParams.isEmpty ? null : customParams,
+      );
+      final updatedItems = [...state.items, ...movies];
+      state = state.copyWith(
+        items: updatedItems,
+        currentPage: nextPage,
+        isLoading: false,
+        hasMoreData: movies.length >= 20,
+        error: null,
+      );
+      print(
+          '🔍 [SearchDiscover] Loaded page $nextPage: ${movies.length} new movies, total: ${updatedItems.length}');
+    } catch (e) {
+      print('❌ [SearchDiscover] Error loading next page: $e');
+      state = state.copyWith(isLoading: false, error: e.toString());
+    }
+  }
+
+  Future<void> refresh() async {
+    state = const SearchDiscoverState();
     await loadInitial();
   }
 }

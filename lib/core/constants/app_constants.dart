@@ -63,12 +63,12 @@ class AppConstants {
   static const String boxCacheMetadata = 'cache_metadata';
   
   // IAP Product IDs
-  static const String iapMonthly = 'pro_monthly';
-  static const String iapYearly = 'pro_yearly';
-  static const String iapLifetime = 'pro_lifetime';
+  static const String iapMonthly = 'monthly_10.99';
+  static const String iapSixMonths = 'yearly_99.99'; // Half Yearly (6 months)
+  static const String iapYearly = 'lifetime_99999'; // Yearly Subscription
   
   // Watermark
-  static const String watermarkText = 'MovieWalls';
+  static const String watermarkText = 'MoviePosters';
   static const double watermarkOpacity = 0.35;
   static const double watermarkSize = 0.05; // 5% of image height
   

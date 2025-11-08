@@ -57,8 +57,8 @@ class PurchaseService {
     try {
       final productIds = {
         AppConstants.iapMonthly,
+        AppConstants.iapSixMonths,
         AppConstants.iapYearly,
-        AppConstants.iapLifetime,
       };
       
       final response = await _inAppPurchase.queryProductDetails(productIds);
@@ -135,8 +135,9 @@ class PurchaseService {
       
       final purchaseParam = PurchaseParam(productDetails: product);
       
-      // Determine if it's a subscription or one-time purchase
+      // All products are subscriptions
       bool isSubscription = productId == AppConstants.iapMonthly || 
+                           productId == AppConstants.iapSixMonths ||
                            productId == AppConstants.iapYearly;
       
       // Purchase based on product type
@@ -147,7 +148,7 @@ class PurchaseService {
           purchaseParam: purchaseParam,
         );
       } else {
-        // Lifetime purchase is non-consumable
+        // Fallback to non-consumable if needed
         result = await _inAppPurchase.buyNonConsumable(
           purchaseParam: purchaseParam,
         );

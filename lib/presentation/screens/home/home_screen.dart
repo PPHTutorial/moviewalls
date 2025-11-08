@@ -37,7 +37,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _checkPermissionsOnLaunch() async {
     // Check storage permission on app launch
     final hasStorage = await PermissionService.instance.hasStoragePermission();
-    
+
     if (!hasStorage && mounted) {
       // Request permission with dialog
       await PermissionService.instance.requestAllPermissions(context: context);
@@ -79,41 +79,41 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       backgroundColor: AppColors.darkBackground,
       appBar: AppBar(
         title: const AppLogo(height: 32),
-              actions: [
-                IconButton(
-                  icon: const Icon(Icons.search),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const SearchScreen(),
-                      ),
-                    );
-                  },
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.search),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const SearchScreen(),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.favorite_border),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const FavoritesScreen(),
-                      ),
-                    );
-                  },
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.favorite_border),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const FavoritesScreen(),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.settings),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const SettingsScreen(),
-                      ),
-                    );
-                  },
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const SettingsScreen(),
                 ),
-              ],
+              );
+            },
+          ),
+        ],
       ),
       body: RefreshIndicator(
         onRefresh: () async {
@@ -177,12 +177,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
 
             SliverToBoxAdapter(child: SizedBox(height: AppDimensions.space24)),
-            
+
             // Top Banner Ad
             const SliverToBoxAdapter(
               child: AdBannerWidget(),
             ),
-            
+
             SliverToBoxAdapter(child: SizedBox(height: AppDimensions.space16)),
 
             // Popular Section Header
@@ -198,7 +198,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     TextButton(
                       onPressed: () {
                         // Navigate to Search with popularity sort
-                        ref.read(searchQueryProvider.notifier).state = '';
                         ref.read(sortByProvider.notifier).state =
                             'popularity.desc';
                         Navigator.push(
@@ -266,7 +265,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             const SliverToBoxAdapter(
               child: AdBannerWidget(),
             ),
-            
+
             SliverToBoxAdapter(child: SizedBox(height: AppDimensions.space12)),
 
             // Top Rated Section Header
@@ -280,7 +279,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     Text('Top Rated', style: AppTextStyles.sectionTitle),
                     TextButton(
                       onPressed: () {
-                        ref.read(searchQueryProvider.notifier).state = '';
                         ref.read(sortByProvider.notifier).state =
                             'vote_average.desc';
                         Navigator.push(
@@ -358,7 +356,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     Text('Latest Trailers', style: AppTextStyles.sectionTitle),
                     TextButton(
                       onPressed: () {
-                        ref.read(searchQueryProvider.notifier).state = '';
                         // Use popularity for trailers discover as proxy
                         ref.read(sortByProvider.notifier).state =
                             'popularity.desc';
@@ -428,8 +425,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             SliverToBoxAdapter(child: SizedBox(height: AppDimensions.space24)),
 
             // Free To Watch Section Header
-              SliverToBoxAdapter(
-                child: Padding(
+            SliverToBoxAdapter(
+              child: Padding(
                 padding:
                     EdgeInsets.symmetric(horizontal: AppDimensions.space16),
                 child: Row(
@@ -438,8 +435,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     Text('Free to Watch', style: AppTextStyles.sectionTitle),
                     TextButton(
                       onPressed: () {
-                        ref.read(searchQueryProvider.notifier).state =
-                            'release_date.desc';
                         // Default discover without region/date filters
                         Navigator.push(
                           context,
@@ -509,7 +504,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             const SliverToBoxAdapter(
               child: AdBannerWidget(),
             ),
-            
+
             SliverToBoxAdapter(child: SizedBox(height: AppDimensions.space16)),
 
             // New Releases Section Header
@@ -523,7 +518,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     Text('New Releases', style: AppTextStyles.sectionTitle),
                     TextButton(
                       onPressed: () {
-                        ref.read(searchQueryProvider.notifier).state = '';
                         // Default discover without region/date filters
                         Navigator.push(
                           context,

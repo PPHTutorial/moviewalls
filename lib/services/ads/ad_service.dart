@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/utils/logger.dart';
@@ -65,6 +66,8 @@ class AdService {
         _loadRewardedAd();
         print('🔍 [AD] Loading rewarded interstitial ad...');
         _loadRewardedInterstitialAd();
+        print('🔍 [AD] Loading open app ad...');
+        loadAppOpenAd();
       });
     } catch (e, stackTrace) {
       print('❌ [AD] Error initializing AdMob: $e');
@@ -476,22 +479,153 @@ class AdService {
       await showInterstitialAd();
     }
   }
+
+  /// Load native ad
+  NativeAd loadNativeAd({
+    required Function(NativeAd ad) onAdLoaded,
+    required Function(NativeAd ad, LoadAdError error) onAdFailedToLoad,
+  }) {
+    final nativeAd = NativeAd(
+      adUnitId: AdConfig.getNativeAdUnitId(),
+      request: const AdRequest(),
+      listener: NativeAdListener(
+        onAdLoaded: (ad) {
+          AppLogger.i('Native ad loaded');
+          if (ad is NativeAd) {
+            onAdLoaded(ad);
+          }
+        },
+        onAdFailedToLoad: (ad, error) {
+          if (error.code == 3) {
+            AppLogger.d('Native ad: No fill (no ad available)');
+          } else {
+            AppLogger.e('Native ad failed to load: ${error.message}', error);
+          }
+          if (ad is NativeAd) {
+            onAdFailedToLoad(ad, error);
+          }
+        },
+      ),
+      nativeTemplateStyle: NativeTemplateStyle(
+        templateType: TemplateType.medium,
+        mainBackgroundColor: const Color(0xFF1A1A1A),
+        cornerRadius: 8.0,
+      ),
+    );
+
+    nativeAd.load();
+    return nativeAd;
+  }
+
+  /// Load and show open app ad
+  AppOpenAd? _appOpenAd;
+  bool _isAppOpenAdReady = false;
+  int _appOpenAdRetryCount = 0;
+
+  void loadAppOpenAd() {
+    final adUnitId = AdConfig.getOpenAppAdUnitId();
+    print('🔍 [AD] Loading open app ad with unit ID: $adUnitId');
+
+    AppOpenAd.load(
+      adUnitId: adUnitId,
+      request: const AdRequest(),
+      adLoadCallback: AppOpenAdLoadCallback(
+        onAdLoaded: (ad) {
+          print('✅ [AD] Open app ad loaded successfully');
+          _appOpenAd = ad;
+          _isAppOpenAdReady = true;
+          _appOpenAdRetryCount = 0;
+          AppLogger.i('Open app ad loaded');
+
+          ad.fullScreenContentCallback = FullScreenContentCallback(
+            onAdDismissedFullScreenContent: (ad) {
+              print('🔍 [AD] Open app ad dismissed');
+              ad.dispose();
+              _isAppOpenAdReady = false;
+              _appOpenAd = null;
+              loadAppOpenAd(); // Reload for next time
+            },
+            onAdFailedToShowFullScreenContent: (ad, error) {
+              print('❌ [AD] Open app ad failed to show: ${error.message}');
+              AppLogger.e('Open app ad failed to show: ${error.message}');
+              ad.dispose();
+              _isAppOpenAdReady = false;
+              _appOpenAd = null;
+              loadAppOpenAd();
+            },
+          );
+        },
+        onAdFailedToLoad: (error) {
+          if (error.code == 3) {
+            AppLogger.d('Open app ad: No fill (no ad available)');
+            if (_appOpenAdRetryCount < _maxRetries) {
+              _appOpenAdRetryCount++;
+              final delaySeconds = _initialRetryDelaySeconds * (1 << (_appOpenAdRetryCount - 1));
+              Future.delayed(Duration(seconds: delaySeconds), () {
+                if (_appOpenAdRetryCount <= _maxRetries) {
+                  loadAppOpenAd();
+                }
+              });
+            }
+          } else {
+            print('❌ [AD] Open app ad failed to load: ${error.message}, Code: ${error.code}');
+            AppLogger.e('Open app ad failed to load: ${error.message}', error);
+            if (_appOpenAdRetryCount < _maxRetries) {
+              _appOpenAdRetryCount++;
+              final delaySeconds = _initialRetryDelaySeconds * (1 << (_appOpenAdRetryCount - 1));
+              Future.delayed(Duration(seconds: delaySeconds), () {
+                if (_appOpenAdRetryCount <= _maxRetries) {
+                  loadAppOpenAd();
+                }
+              });
+            }
+          }
+          _isAppOpenAdReady = false;
+        },
+      ),
+    );
+  }
+
+  /// Show open app ad
+  Future<void> showAppOpenAd() async {
+    print('🔍 [AD] Attempting to show open app ad. Ready: $_isAppOpenAdReady');
+    
+    if (_isAppOpenAdReady && _appOpenAd != null) {
+      try {
+        await _appOpenAd!.show();
+        print('✅ [AD] Open app ad shown successfully');
+      } catch (e) {
+        print('❌ [AD] Error showing open app ad: $e');
+        AppLogger.e('Error showing open app ad', e);
+        _isAppOpenAdReady = false;
+        _appOpenAd = null;
+        loadAppOpenAd();
+      }
+    } else {
+      print('⚠️ [AD] Open app ad not ready');
+      loadAppOpenAd(); // Try to load for next time
+    }
+  }
   
   /// Dispose all ads
   void disposeAll() {
     _interstitialAd?.dispose();
     _rewardedAd?.dispose();
     _rewardedInterstitialAd?.dispose();
+    _appOpenAd?.dispose();
     
     _interstitialAd = null;
     _rewardedAd = null;
     _rewardedInterstitialAd = null;
+    _appOpenAd = null;
     _isInterstitialReady = false;
     _isRewardedReady = false;
     _isRewardedInterstitialReady = false;
+    _isAppOpenAdReady = false;
     _interstitialRetryCount = 0;
     _rewardedRetryCount = 0;
     _rewardedInterstitialRetryCount = 0;
+    _appOpenAdRetryCount = 0;
   }
   
   /// Reset retry counts (useful for manual retry)

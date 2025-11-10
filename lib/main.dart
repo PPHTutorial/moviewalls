@@ -5,6 +5,8 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'data/models/movie_model.dart';
 import 'app/app.dart';
 import 'services/ads/ad_service.dart';
+import 'services/iap/subscription_manager.dart';
+import 'services/iap/purchase_service.dart';
 // Data fetching removed during logic rebuild
 
 void main() async {
@@ -17,8 +19,10 @@ void main() async {
     Hive.registerAdapter(MovieModelAdapter());
   }
 
-  // Initialize AdMob
+  // Initialize services
   await AdService.instance.initialize();
+  await SubscriptionManager.instance.initialize();
+  await PurchaseService.instance.initialize();
 
   // Set system UI overlay style
   SystemChrome.setSystemUIOverlayStyle(

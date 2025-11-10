@@ -14,7 +14,9 @@ class PurchaseService {
   bool _isAvailable = false;
   List<ProductDetails> _products = [];
   
-  PurchaseService._();
+  PurchaseService._() {
+    unawaited(initialize());
+  }
   
   static PurchaseService get instance {
     _instance ??= PurchaseService._();
@@ -23,6 +25,10 @@ class PurchaseService {
   
   /// Initialize IAP
   Future<void> initialize() async {
+    if (_subscription != null) {
+      AppLogger.d('PurchaseService already initialized');
+      return;
+    }
     try {
       // Check if IAP is available
       _isAvailable = await _inAppPurchase.isAvailable();
@@ -85,29 +91,37 @@ class PurchaseService {
   }
   
   /// Handle purchase updates
-  void _handlePurchaseUpdates(List<PurchaseDetails> purchases) {
+  void _handlePurchaseUpdates(List<PurchaseDetails> purchases) async {
     for (final purchase in purchases) {
       AppLogger.i('Purchase update: ${purchase.productID} - ${purchase.status}');
       
       if (purchase.status == PurchaseStatus.purchased ||
           purchase.status == PurchaseStatus.restored) {
-        // Verify purchase
-        _verifyPurchase(purchase);
-        
-        // Update subscription status
-        _subscriptionManager.updateSubscriptionStatus(
-          productId: purchase.productID,
-          isActive: true,
-        );
+        // Verify and process purchase
+        await _verifyAndProcessPurchase(purchase);
       } else if (purchase.status == PurchaseStatus.error) {
         AppLogger.e('Purchase error: ${purchase.error}');
       }
       
       // Complete purchase
       if (purchase.pendingCompletePurchase) {
-        _inAppPurchase.completePurchase(purchase);
+        await _inAppPurchase.completePurchase(purchase);
       }
     }
+  }
+
+  /// Verify and process purchase
+  Future<void> _verifyAndProcessPurchase(PurchaseDetails purchase) async {
+    final productId = purchase.productID;
+    
+    // Verify purchase
+    await _verifyPurchase(purchase);
+    
+    // Update subscription status
+    _subscriptionManager.updateSubscriptionStatus(
+      productId: productId,
+      isActive: true,
+    );
   }
   
   /// Verify purchase (implement server-side verification in production)
@@ -120,14 +134,33 @@ class PurchaseService {
     return true;
   }
   
-  /// Purchase product
-  Future<bool> purchaseProduct(String productId) async {
+  /// Purchase subscription (non-consumable)
+  Future<bool> buySubscription(String productId) async {
+    return _buyProduct(productId, isConsumable: false);
+  }
+
+  /// Purchase consumable product
+  Future<bool> buyConsumableProduct(String productId) async {
+    return _buyProduct(productId, isConsumable: true);
+  }
+
+  /// Internal method to purchase a product
+  Future<bool> _buyProduct(String productId, {required bool isConsumable}) async {
     if (!_isAvailable) {
       AppLogger.w('IAP not available');
       return false;
     }
     
     try {
+      if (_products.isEmpty) {
+        await _loadProducts();
+      }
+
+      if (_products.isEmpty) {
+        AppLogger.e('No products available to purchase');
+        return false;
+      }
+
       final product = _products.firstWhere(
         (p) => p.id == productId,
         orElse: () => throw Exception('Product not found'),
@@ -135,31 +168,32 @@ class PurchaseService {
       
       final purchaseParam = PurchaseParam(productDetails: product);
       
-      // All products are subscriptions
-      bool isSubscription = productId == AppConstants.iapMonthly || 
-                           productId == AppConstants.iapSixMonths ||
-                           productId == AppConstants.iapYearly;
-      
       // Purchase based on product type
       bool result;
-      if (isSubscription) {
-        // Use buyConsumable for subscriptions (works better with subscription handling)
+      if (isConsumable) {
         result = await _inAppPurchase.buyConsumable(
           purchaseParam: purchaseParam,
+          autoConsume: true,
         );
       } else {
-        // Fallback to non-consumable if needed
+        // Use buyNonConsumable for subscriptions (correct approach)
         result = await _inAppPurchase.buyNonConsumable(
           purchaseParam: purchaseParam,
         );
       }
       
-      AppLogger.i('Purchase initiated: ${product.id} (subscription: $isSubscription)');
+      AppLogger.i('Purchase initiated: ${product.id} (consumable: $isConsumable)');
       return result;
     } catch (e, stackTrace) {
       AppLogger.e('Error purchasing product', e, stackTrace);
       return false;
     }
+  }
+
+  /// Purchase product (backward compatibility - treats all as subscriptions)
+  Future<bool> purchaseProduct(String productId) async {
+    // All current products are subscriptions, so use buySubscription
+    return buySubscription(productId);
   }
   
   /// Restore purchases
@@ -177,7 +211,19 @@ class PurchaseService {
     }
   }
   
-  /// Get available products
+  /// Get available products (loads if not already loaded)
+  Future<List<ProductDetails>> getProducts() async {
+    if (!_isAvailable) return [];
+    
+    // If products are already loaded, return them
+    if (_products.isNotEmpty) return _products;
+    
+    // Otherwise, load them
+    await _loadProducts();
+    return _products;
+  }
+  
+  /// Get available products (synchronous getter)
   List<ProductDetails> get products => _products;
   
   /// Check if IAP is available
@@ -186,6 +232,7 @@ class PurchaseService {
   /// Dispose
   void dispose() {
     _subscription?.cancel();
+    _subscription = null;
   }
 }
 

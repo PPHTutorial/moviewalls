@@ -1,7 +1,7 @@
 name: movie_posters
 description: MovieWalls - Cinematic Wallpapers App
 publish_to: 'none'
-version: 11.8.25+3
+version: 11.8.25+4
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
